@@ -93,12 +93,19 @@ self._last_step_time      = float (timestamp de fin de paso)
 ## Parámetros clave de recognition.py
 | Variable | Valor | Efecto |
 |----------|-------|--------|
-| `LBPH_THRESH` | `85` (en código usa `MAX_DIST=100`) | Umbral de distancia |
-| `PROCESS_EVERY_N` | `3` | Frames saltados |
+| `MAX_DIST` | `95` | Distancia LBPH máxima para "conocido" |
+| `PROCESS_EVERY_N` | `2` | Frames saltados (era 3) |
 | `LOG_COOLDOWN` | `5` seg | Entre logs |
-| `FACE_SIZE` | `(100,100)` | Normalización |
+| `FACE_SIZE` | `(150,150)` | ↑ de 100×100 — más detalle |
+| LBPH `radius` | `2` | Captura patrones más amplios (era 1) |
 
-Augmentation en retrain: por cada muestra → 3 variantes (original, bright, dark) → **3× el dataset**
+Pipeline de preprocesado (`_prepare_face`): `align_face()` → CLAHE → resize(150,150)
+Augmentation en retrain: original + bright + dark + **flip** → **4× el dataset** (era 3×)
+
+### align_face() — sin dlib
+Usa `haarcascade_eye_tree_eyeglasses.xml` dentro del ROI de la cara.
+Si detecta ≥2 ojos → rota para horizontalizarlos → `warpAffine`.
+Si no detecta → retorna original sin modificar (nunca distorsiona).
 
 ---
 
@@ -125,5 +132,10 @@ access_log   (id, identity_id, identity_name, confidence, status, screenshot_pat
 - [x] Detección frontal + perfil
 - [x] System tray (pystray)
 - [x] Gestión de identidades (DB view)
+- [x] UI de registro: step bubbles + borde de video + barra de progreso
+- [x] Multi-persona: `_detect_all_faces()` retorna TODAS las caras del frame
+- [x] Face alignment sin dlib (`haarcascade_eye_tree_eyeglasses`)
+- [x] FACE_SIZE 150×150, radius=2, 4× augmentation
+- [x] Registro guarda muestras alineadas 150×150 (`_prepare_face`)
 - [ ] Vista "Historial/Logs" — NO implementada
-- [ ] UI de registro: sin step bubbles ni indicador visual de cara detectada
+- [ ] Re-registrar personas existentes para aprovechar nuevo pipeline (DB vieja tiene 100×100 sin alinear)
