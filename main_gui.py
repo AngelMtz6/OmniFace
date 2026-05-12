@@ -12,7 +12,7 @@ from pystray import MenuItem as item
 
 from app.camera import VideoCamera
 from app.recognition import RecognitionEngine
-from app.database import get_all_identities, delete_identity, get_access_logs, get_stats
+from app.database import init_db, get_all_identities, delete_identity, get_access_logs, get_stats
 
 # Configuración estética
 ctk.set_appearance_mode("Dark")
@@ -25,6 +25,9 @@ class OmniFaceApp(ctk.CTk):
         self.title("OmniFace - Sistema de Reconocimiento Facial")
         self.geometry("1100x700")
         
+        # Asegurar que la DB esté lista
+        init_db()
+        
         # Inicializar componentes
         self.camera = VideoCamera(video_source=1)
         self.engine = RecognitionEngine()
@@ -33,6 +36,19 @@ class OmniFaceApp(ctk.CTk):
         self.last_frame_id = -1
         self.current_view = "monitoring"
         self.is_minimized = False
+        
+        # Estado de Registro
+        self.registration_name = ""
+        self.current_step = 0
+        self.captured_samples = []
+        self.registration_steps = [
+            "Ponte de frente, muy de cerca",
+            "Ahora aléjate un poco",
+            "Mira ligeramente hacia arriba",
+            "Mira ligeramente hacia abajo",
+            "Gira la cabeza hacia un lado",
+            "Gira la cabeza hacia el otro lado"
+        ]
         
         # Configurar Grid
         self.grid_columnconfigure(1, weight=1)
@@ -47,6 +63,9 @@ class OmniFaceApp(ctk.CTk):
 
         self.btn_monitor = ctk.CTkButton(self.sidebar, text="Monitoreo", command=lambda: self.show_view("monitoring"))
         self.btn_monitor.pack(pady=10, padx=20)
+
+        self.btn_register = ctk.CTkButton(self.sidebar, text="Registrar Usuario", command=lambda: self.show_view("registration"))
+        self.btn_register.pack(pady=10, padx=20)
 
         self.btn_db = ctk.CTkButton(self.sidebar, text="Base de Datos", command=lambda: self.show_view("database"))
         self.btn_db.pack(pady=10, padx=20)
@@ -64,6 +83,7 @@ class OmniFaceApp(ctk.CTk):
         # Vistas
         self.init_monitoring_view()
         self.init_database_view()
+        self.init_registration_view()
         
         self.show_view("monitoring")
 
@@ -104,15 +124,45 @@ class OmniFaceApp(ctk.CTk):
         self.btn_refresh = ctk.CTkButton(self.view_database, text="Actualizar Lista", command=self.refresh_identities)
         self.btn_refresh.pack(pady=10)
 
+    def init_registration_view(self):
+        self.view_registration = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        
+        self.reg_title = ctk.CTkLabel(self.view_registration, text="Nuevo Registro", font=ctk.CTkFont(size=24, weight="bold"))
+        self.reg_title.pack(pady=20)
+
+        # Entrada de nombre
+        self.name_entry = ctk.CTkEntry(self.view_registration, placeholder_text="Nombre completo", width=300)
+        self.name_entry.pack(pady=10)
+
+        # Instrucciones
+        self.instruction_label = ctk.CTkLabel(self.view_registration, text="Ingresa el nombre para comenzar", 
+                                             font=ctk.CTkFont(size=16), text_color="#AAAAAA")
+        self.instruction_label.pack(pady=20)
+
+        # Área de Video pequeña para registro
+        self.video_reg_label = tk.Label(self.view_registration, bg="#1a1a1a", width=400, height=300)
+        self.video_reg_label.pack(pady=10)
+
+        # Botón de Captura
+        self.btn_capture = ctk.CTkButton(self.view_registration, text="Comenzar Captura", command=self.handle_registration_click)
+        self.btn_capture.pack(pady=20)
+
+        self.progress_label = ctk.CTkLabel(self.view_registration, text="Progreso: 0 / 6")
+        self.progress_label.pack()
+
     def show_view(self, view_name):
         self.view_monitoring.pack_forget()
         self.view_database.pack_forget()
+        self.view_registration.pack_forget()
         
         if view_name == "monitoring":
             self.view_monitoring.pack(expand=True, fill="both")
         elif view_name == "database":
             self.view_database.pack(expand=True, fill="both")
             self.refresh_identities()
+        elif view_name == "registration":
+            self.reset_registration_state()
+            self.view_registration.pack(expand=True, fill="both")
         
         self.current_view = view_name
 
@@ -139,40 +189,111 @@ class OmniFaceApp(ctk.CTk):
             self.engine.retrain()
             self.refresh_identities()
 
+    # ── Lógica de Registro ──
+
+    def reset_registration_state(self):
+        self.current_step = 0
+        self.captured_samples = []
+        self.registration_name = ""
+        if hasattr(self, 'name_entry'):
+            self.name_entry.delete(0, 'end')
+            self.name_entry.configure(state="normal")
+            self.instruction_label.configure(text="Ingresa el nombre para comenzar", text_color="#AAAAAA")
+            self.btn_capture.configure(text="Comenzar Captura", fg_color=['#3B8ED0', '#1F538D'])
+            self.progress_label.configure(text="Progreso: 0 / 6")
+
+    def handle_registration_click(self):
+        if self.registration_name == "":
+            name = self.name_entry.get().strip()
+            if not name:
+                messagebox.showwarning("Atención", "Por favor ingresa un nombre")
+                return
+            self.registration_name = name
+            self.name_entry.configure(state="disabled")
+            self.btn_capture.configure(text="Capturar")
+            self.current_step = 1
+            self.update_registration_ui()
+        else:
+            self.perform_step_capture()
+
+    def update_registration_ui(self):
+        if self.current_step <= len(self.registration_steps):
+            instruction = self.registration_steps[self.current_step - 1]
+            self.instruction_label.configure(text=instruction, text_color="#50CD64")
+            self.progress_label.configure(text=f"Progreso: {self.current_step - 1} / 6")
+        else:
+            self.finish_registration()
+
+    def perform_step_capture(self):
+        frame, _ = self.camera.get_frame()
+        if frame is None:
+            return
+
+        h, w = frame.shape[:2]
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Modo Manual: Recortar el área del cuadro guía
+        y1, y2 = max(0, h//2-130), min(h, h//2+130)
+        x1, x2 = max(0, w//2-100), min(w, w//2+100)
+        
+        face_roi = gray[y1:y2, x1:x2]
+        face = cv2.resize(face_roi, (100, 100))
+        _, buf = cv2.imencode('.jpg', face)
+        
+        self.captured_samples.append(buf.tobytes())
+        
+        if self.current_step >= 6:
+            self.progress_label.configure(text="Progreso: 6 / 6")
+            self.finish_registration()
+        else:
+            self.current_step += 1
+            self.update_registration_ui()
+
+    def finish_registration(self):
+        from app.database import save_identity
+        
+        save_identity(self.registration_name, self.captured_samples)
+        self.engine.retrain()
+        
+        messagebox.showinfo("Éxito", f"Usuario '{self.registration_name}' registrado correctamente.")
+        self.show_view("database")
+
     # ── Lógica de Video ──
 
     def update_video(self):
-        if self.current_view == "monitoring" and not self.is_minimized:
-            frame, frame_id = self.camera.get_frame()
-            
-            if frame is not None and frame_id != self.last_frame_id:
-                self.last_frame_id = frame_id
-                
-                # Procesar reconocimiento
-                processed = self.engine.process_frame(frame)
-                
-                # Convertir para Tkinter
-                rgb_image = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
-                pil_image = Image.fromarray(rgb_image)
-                
-                # Redimensionar para ajustar al contenedor manteniendo aspecto
-                w, h = self.video_label.winfo_width(), self.video_label.winfo_height()
-                if w > 10 and h > 10:
-                    pil_image = pil_image.resize((w, h), Image.Resampling.LANCZOS)
-                
-                tk_image = ImageTk.PhotoImage(image=pil_image)
-                
-                self.video_label.configure(image=tk_image)
-                self.video_label.image = tk_image
+        # Actualizar feed según la vista activa
+        frame, frame_id = self.camera.get_frame()
         
-        # Ejecutar reconocimiento en background si está minimizado (opcional)
-        elif self.is_minimized:
-            frame, frame_id = self.camera.get_frame()
-            if frame is not None and frame_id != self.last_frame_id:
-                self.last_frame_id = frame_id
+        if frame is not None and frame_id != self.last_frame_id:
+            self.last_frame_id = frame_id
+            
+            # Procesar según vista
+            if self.current_view == "monitoring" and not self.is_minimized:
+                processed = self.engine.process_frame(frame)
+                self.display_frame(processed, self.video_label)
+            
+            elif self.current_view == "registration":
+                # Dibujar un rectángulo guía en la vista de registro
+                h, w = frame.shape[:2]
+                cv2.rectangle(frame, (w//2-100, h//2-130), (w//2+100, h//2+130), (255, 255, 255), 2)
+                self.display_frame(frame, self.video_reg_label)
+            
+            elif self.is_minimized:
                 self.engine.process_frame(frame)
 
         self.after(20, self.update_video)
+
+    def display_frame(self, frame, label_widget):
+        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(rgb_image)
+        
+        w, h = label_widget.winfo_width(), label_widget.winfo_height()
+        if w > 10 and h > 10:
+            pil_image = pil_image.resize((w, h), Image.Resampling.LANCZOS)
+        
+        tk_image = ImageTk.PhotoImage(image=pil_image)
+        label_widget.configure(image=tk_image)
+        label_widget.image = tk_image
 
     # ── System Tray ──
 

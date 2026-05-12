@@ -6,7 +6,8 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'omni
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    # Aumentar timeout para evitar 'database is locked' y permitir multihilo
+    conn = sqlite3.connect(DB_PATH, timeout=10.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -21,6 +22,15 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Verificar si existe la columna 'encodings' y si tiene restricción NOT NULL
+    # Si existe en una versión vieja de la DB, le daremos un valor por defecto o la haremos opcional
+    try:
+        c.execute('ALTER TABLE identities ADD COLUMN encodings TEXT DEFAULT ""')
+    except sqlite3.OperationalError:
+        # La columna ya existe, todo bien
+        pass
+
     # Almacena cada muestra facial como JPEG 100x100 en escala de grises
     c.execute('''
         CREATE TABLE IF NOT EXISTS face_samples (
@@ -48,16 +58,25 @@ def init_db():
 def save_identity(name, face_blobs):
     """Crea identidad y guarda las muestras faciales. Retorna el nuevo id."""
     conn = get_connection()
-    c = conn.cursor()
-    c.execute('INSERT INTO identities (name) VALUES (?)', (name,))
-    identity_id = c.lastrowid
-    c.executemany(
-        'INSERT INTO face_samples (identity_id, face_data) VALUES (?, ?)',
-        [(identity_id, blob) for blob in face_blobs]
-    )
-    conn.commit()
-    conn.close()
-    return identity_id
+    try:
+        c = conn.cursor()
+        # Insertar nombre, y manejar columna encodings si existe
+        # Obtenemos las columnas para ser dinámicos
+        cols = [col[1] for col in c.execute("PRAGMA table_info(identities)").fetchall()]
+        if "encodings" in cols:
+            c.execute('INSERT INTO identities (name, encodings) VALUES (?, ?)', (name, ""))
+        else:
+            c.execute('INSERT INTO identities (name) VALUES (?)', (name,))
+            
+        identity_id = c.lastrowid
+        c.executemany(
+            'INSERT INTO face_samples (identity_id, face_data) VALUES (?, ?)',
+            [(identity_id, blob) for blob in face_blobs]
+        )
+        conn.commit()
+        return identity_id
+    finally:
+        conn.close()
 
 
 def get_all_identities():
