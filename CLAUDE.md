@@ -92,13 +92,14 @@ access_log (
 | Método | Ruta | Función en routes.py | Descripción |
 |--------|------|---------------------|-------------|
 | GET | `/` | `index()` | Página monitor en vivo |
-| GET | `/register` | `register()` | Página de enrollamiento |
+| GET | `/register` | `register()` | Página de enrollamiento guiado |
 | GET | `/admin` | `admin()` | Panel de administración |
 | GET | `/video_feed` | `_generate_frames()` | Stream MJPEG procesado |
 | GET | `/capture_frame` | `capture_frame()` | Frame actual como base64 JSON |
-| POST | `/enroll` | `enroll()` | Registrar nueva identidad |
+| GET | `/face_status` | `face_status()` | `{face_detected: bool, count: int}` — usado por enrollamiento guiado |
+| POST | `/enroll` | `enroll()` | Registrar nueva identidad (recibe `{name, frames:[b64...]}`) |
 | GET | `/identities` | `identities()` | Lista de identidades |
-| DELETE | `/identity/<id>` | `delete()` | Eliminar identidad |
+| DELETE | `/identity/<id>` | `delete()` | Eliminar identidad + retrain |
 | GET | `/logs` | `logs()` | Historial de accesos |
 | GET | `/stats` | `stats()` | Contadores globales |
 | GET | `/alert_status` | `alert_status()` | Estado de alerta actual |
@@ -164,6 +165,8 @@ AlertManager.update() → SSE /events → {"alert": bool} → overlay rojo en fr
 - [x] `VideoCamera` auto-detecta backend (default / DSHOW / índice 1)
 - [x] Flip horizontal (espejo) en captura
 - [x] `use_reloader=False` en Flask para evitar doble instancia de cámara
+- [x] Enrollamiento guiado multi-ángulo (6 pasos, ~15 muestras, auto-captura con countdown)
+- [x] Endpoint `/face_status` para detección en tiempo real desde el frontend
 - [ ] Detección de cara parcial (pendiente)
 - [ ] Modo demo con datos pre-cargados
 - [ ] README desactualizado (aún menciona dlib — no se usa)
