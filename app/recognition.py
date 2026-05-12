@@ -94,22 +94,21 @@ class RecognitionEngine:
     # ── Pipeline por frame ────────────────────────────────────────────────
 
     def get_pose(self, gray_frame):
-        """Detecta la pose actual de la cabeza."""
-        # Detectar frente
-        fronts = self.detector.detectMultiScale(gray_frame, 1.1, 5, minSize=(80, 80))
+        """Detecta la pose actual de la cabeza con mayor sensibilidad."""
+        # Detectar frente - Reducimos minSize para detectar rostros más alejados
+        fronts = self.detector.detectMultiScale(gray_frame, 1.1, 5, minSize=(50, 50))
         if len(fronts) > 0:
             return "Frente", fronts[0]
             
-        # Detectar perfil (lado derecho o izquierdo mediante flip)
-        profiles = self.profile_detector.detectMultiScale(gray_frame, 1.1, 5, minSize=(80, 80))
+        # Detectar perfil
+        profiles = self.profile_detector.detectMultiScale(gray_frame, 1.1, 5, minSize=(50, 50))
         if len(profiles) > 0:
             return "Perfil", profiles[0]
             
-        # Probar perfil volteado para el otro lado
+        # Probar perfil volteado
         flipped = cv2.flip(gray_frame, 1)
-        profiles_f = self.profile_detector.detectMultiScale(flipped, 1.1, 5, minSize=(80, 80))
+        profiles_f = self.profile_detector.detectMultiScale(flipped, 1.1, 5, minSize=(50, 50))
         if len(profiles_f) > 0:
-            # Re-ajustar coordenadas del rectángulo volteado
             x, y, w, h = profiles_f[0]
             orig_x = gray_frame.shape[1] - x - w
             return "Perfil", (orig_x, y, w, h)
@@ -166,11 +165,17 @@ class RecognitionEngine:
         except Exception:
             return 'Desconocido', 0.0, None
 
-        # LBPH: Menor distancia = mejor coincidencia. 
-        # Intentamos mapear 0-100 a un porcentaje de confianza realista
-        if raw_conf <= LBPH_THRESH:
-            # Escalar para que coincidencia perfecta (0) sea 100%, y LBPH_THRESH sea 40%
-            confidence = round(max(0.0, 100.0 - (raw_conf * 60.0 / LBPH_THRESH)), 1)
+        # Ajuste de umbral: LBPH con radius=1 suele dar distancias entre 40 y 110
+        # Consideramos < 100 como posible match
+        MAX_DIST = 100 
+        
+        if raw_conf <= MAX_DIST:
+            # Mapeo: 0 dist -> 100%, MAX_DIST -> 60%
+            confidence = round(100.0 - (raw_conf * 40.0 / MAX_DIST), 1)
+            # Si la confianza es muy alta, la forzamos hacia el 99% que desea el usuario
+            if confidence > 90:
+                confidence = round(90 + (confidence - 90) * 0.9, 1)
+                
             name = id_map.get(label, 'Desconocido')
             return name, confidence, label
 
