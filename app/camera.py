@@ -37,6 +37,7 @@ class VideoCamera:
             if self.cap.isOpened():
                 self.video_source = 1
 
+        self._frame = None
         if not self.cap.isOpened():
             self.cap = cv2.VideoCapture() # empty cap
         else:
