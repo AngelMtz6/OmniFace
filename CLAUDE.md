@@ -1,183 +1,129 @@
-# OmniFace — Knowledge Graph del Proyecto
+# OmniFace-1 — Knowledge Graph (Desktop App)
 
-> Este archivo es el mapa de contexto del proyecto. Léelo primero antes de tocar cualquier archivo.
-
----
-
-## Identidad del proyecto
-- **Nombre:** OmniFace
-- **Evento:** Hackatec 2026
-- **Tipo:** Sistema de reconocimiento facial en tiempo real (escritorio + web)
-- **Repo:** https://github.com/AngelMtz6/OmniFace
-- **Directorio activo:** `C:\Users\angel\Desktop\Hackatec\OmniFace`
+> LEE ESTE ARCHIVO PRIMERO. Evita releer el código fuente innecesariamente.
 
 ---
 
-## Stack actual (después de pivote)
-
-| Capa | Tecnología | Por qué |
-|------|-----------|---------|
-| Reconocimiento | OpenCV LBPH (`cv2.face.LBPHFaceRecognizer`) | Reemplazó `face_recognition`/dlib, sin dependencias externas |
-| Detección | Haar Cascade (`haarcascade_frontalface_default.xml`) | Incluido en OpenCV, rápido en CPU |
-| Captura | `VideoCamera` auto-detecta: default → `CAP_DSHOW` → índice 1 | Robusto ante error MSMF `-1072875772` |
-| Storage | SQLite — blobs JPEG 100×100 grises | Sin archivos externos, portátil |
-| Backend web | Flask 3.x + SSE, `use_reloader=False` | Evita doble instancia de cámara en modo debug |
-| Frontend | HTML/CSS/JS vanilla | Sin frameworks, fácil de editar |
+## Identidad
+- **Tipo:** App de escritorio — CustomTkinter (NO web)
+- **Entry point:** `python main_gui.py`  ← único archivo para correr
+- **run.py + routes.py:** son residuos de la versión web — NO se usan en desktop
+- **Repo:** https://github.com/AngelMtz6/OmniFace  (rama `main`)
+- **Directorio:** `C:\Users\angel\Desktop\Hackatec\OmniFace-1`
+- **Venv:** `.venv\` (activar con `.venv\Scripts\activate`)
 
 ---
 
-## Árbol de archivos y responsabilidades
+## Stack
+| Capa | Tecnología |
+|------|-----------|
+| GUI | `customtkinter` 5.x + `tkinter` (Label para video) |
+| Video | OpenCV CAP_DSHOW, flip horizontal, 640×480 |
+| Reconocimiento | LBPH `radius=1, neighbors=8` + CLAHE + augmentation (bright/dark) |
+| Detección | Haar frontal + Haar perfil (flip para perfil izquierdo) |
+| Storage | SQLite — blobs JPEG 100×100 grises |
+| System tray | `pystray` (minimizar a bandeja) |
+
+---
+
+## Árbol de archivos (solo los relevantes)
 
 ```
-OmniFace/
-│
-├── run.py                      ← ENTRADA. `python run.py` arranca en :5000
-│
+OmniFace-1/
+├── main_gui.py          ← TODA la GUI: vistas, lógica de video, registro
+├── run.py               ← NO USAR (web leftover)
 ├── app/
-│   ├── __init__.py             ← Flask app factory + init_db()
-│   ├── camera.py               ← Singleton VideoCamera (CAP_DSHOW, thread-safe)
-│   ├── database.py             ← ÚNICA fuente de verdad para SQLite
-│   ├── recognition.py          ← Motor LBPH: detección + identificación + dibujo
-│   ├── alerts.py               ← Contador de desconocidos → alerta + screenshot
-│   └── routes.py               ← Todos los endpoints Flask + generador MJPEG
-│
-├── templates/
-│   ├── base.html               ← Navbar + SSE global de alertas
-│   ├── index.html              ← /        Monitor en vivo + stats + últimos eventos
-│   ├── register.html           ← /register  Enrollamiento con captura múltiple
-│   └── admin.html              ← /admin    Panel completo: identidades + historial
-│
-├── static/
-│   ├── css/style.css           ← Dark theme completo, sin dependencias externas
-│   └── js/app.js               ← Solo SSE global de navbar
-│
-├── data/omniface.db            ← Auto-generado. NO commitear (en .gitignore)
-├── screenshots/                ← Auto-generado. NO commitear (en .gitignore)
-├── test_cam.py                 ← Diagnóstico de backends de cámara
-└── CLAUDE.md                   ← Este archivo ← LEE PRIMERO
+│   ├── camera.py        ← VideoCamera singleton, get_frame() → (frame, frame_id)
+│   ├── recognition.py   ← RecognitionEngine: LBPH + CLAHE + augment + perfil
+│   ├── database.py      ← SQLite: identities + face_samples (BLOBs) + access_log
+│   ├── alerts.py        ← AlertManager: contador de desconocidos + screenshot
+│   ├── routes.py        ← NO USAR (web leftover)
+│   └── __init__.py      ← NO USAR (web leftover)
+├── assets/logo.png
+├── scratch/test_camera.py
+└── requirements.txt     ← flask, opencv-contrib, numpy, Pillow, customtkinter, pystray
 ```
 
 ---
 
-## Schema de base de datos
+## Estructura de main_gui.py
 
+```
+OmniFaceApp(ctk.CTk)
+├── __init__()
+│   ├── VideoCamera(video_source=0)
+│   ├── RecognitionEngine()
+│   ├── Sidebar: botones Monitor / Registrar / Base de Datos / Historial
+│   └── init_monitoring_view() + init_database_view() + init_registration_view()
+│
+├── Vistas (show_view switch)
+│   ├── "monitoring"   → view_monitoring  (video_label, status_panel)
+│   ├── "registration" → view_registration (video_reg_label, pasos)
+│   ├── "database"     → view_database    (scrollable list de identidades)
+│   └── "logs"         → ⚠ BOTÓN EN SIDEBAR PERO VISTA NO IMPLEMENTADA
+│
+├── update_video()  ← loop principal via self.after(20, ...)
+│   ├── monitoring → engine.process_frame() → display_frame(video_label)
+│   └── registration → handle_auto_registration(frame) → display_frame(video_reg_label)
+│
+├── handle_auto_registration(frame)   ← captura automática por pasos
+│   ├── 6 pasos × 10 muestras = 60 capturas totales
+│   ├── Pausa 3s entre pasos (_last_step_time)
+│   ├── Detecta frontal Y perfil (pasos 5-6 usan profile_detector)
+│   └── finish_registration() → save_identity() + retrain()
+│
+└── System Tray (pystray) en hilo daemon
+```
+
+---
+
+## Estado de registro (variables en self)
+```python
+self.registration_steps   = [6 strings de instrucción]
+self.samples_per_step     = 10
+self.current_step         = 0   # 0=inactivo, 1-6=paso activo, 7=terminado
+self.current_step_samples = 0   # muestras capturadas en el paso actual
+self.captured_samples     = []  # lista de blobs JPEG
+self.is_capturing_auto    = bool
+self._last_step_time      = float (timestamp de fin de paso)
+```
+
+---
+
+## Parámetros clave de recognition.py
+| Variable | Valor | Efecto |
+|----------|-------|--------|
+| `LBPH_THRESH` | `85` (en código usa `MAX_DIST=100`) | Umbral de distancia |
+| `PROCESS_EVERY_N` | `3` | Frames saltados |
+| `LOG_COOLDOWN` | `5` seg | Entre logs |
+| `FACE_SIZE` | `(100,100)` | Normalización |
+
+Augmentation en retrain: por cada muestra → 3 variantes (original, bright, dark) → **3× el dataset**
+
+---
+
+## DB Schema
 ```sql
-identities (
-  id         INTEGER PK AUTOINCREMENT,
-  name       TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW
-)
-
-face_samples (                        -- Una fila por imagen capturada
-  id          INTEGER PK AUTOINCREMENT,
-  identity_id INTEGER FK → identities.id ON DELETE CASCADE,
-  face_data   BLOB                    -- JPEG 100×100 escala de grises
-)
-
-access_log (
-  id              INTEGER PK,
-  identity_id     INTEGER FK (nullable = desconocido),
-  identity_name   TEXT,
-  confidence      REAL,               -- 0-100, mayor = más seguro
-  status          TEXT,               -- 'known' | 'unknown'
-  screenshot_path TEXT,               -- solo para desconocidos
-  timestamp       TIMESTAMP
-)
+identities   (id, name, created_at)
+face_samples (id, identity_id FK, face_data BLOB)   -- JPEG 100x100 gray
+access_log   (id, identity_id, identity_name, confidence, status, screenshot_path, timestamp)
 ```
 
 ---
 
-## API endpoints
-
-| Método | Ruta | Función en routes.py | Descripción |
-|--------|------|---------------------|-------------|
-| GET | `/` | `index()` | Página monitor en vivo |
-| GET | `/register` | `register()` | Página de enrollamiento guiado |
-| GET | `/admin` | `admin()` | Panel de administración |
-| GET | `/video_feed` | `_generate_frames()` | Stream MJPEG procesado |
-| GET | `/capture_frame` | `capture_frame()` | Frame actual como base64 JSON |
-| GET | `/face_status` | `face_status()` | `{face_detected: bool, count: int}` — usado por enrollamiento guiado |
-| POST | `/enroll` | `enroll()` | Registrar nueva identidad (recibe `{name, frames:[b64...]}`) |
-| GET | `/identities` | `identities()` | Lista de identidades |
-| DELETE | `/identity/<id>` | `delete()` | Eliminar identidad + retrain |
-| GET | `/logs` | `logs()` | Historial de accesos |
-| GET | `/stats` | `stats()` | Contadores globales |
-| GET | `/alert_status` | `alert_status()` | Estado de alerta actual |
-| GET | `/events` | `events()` | SSE → `{"alert": bool}` |
+## Problemas conocidos
+- `"logs"` view: botón en sidebar **no funciona** — falta `init_logs_view()` y case en `show_view()`
+- `routes.py` y `__init__.py` en `app/` son web leftovers — no eliminar por si acaso
+- Registration UI: solo texto, sin step bubbles, sin indicador visual de detección
 
 ---
 
-## Flujo de datos principal
-
-```
-VideoCamera (hilo daemon)
-  ├── Auto-detecta backend: default → CAP_DSHOW → índice 1
-  ├── Aplica flip horizontal (efecto espejo)
-  └── get_frame() → (frame: ndarray, frame_id: int)
-        ↓
-routes._generate_frames()
-  ├── Descarta frames duplicados via frame_id
-  └── Llama engine.process_frame(frame)
-        ↓
-RecognitionEngine.process_frame()
-  ├── Haar Cascade → rects de caras
-  ├── LBPH.predict() → (label, raw_confidence)
-  ├── _draw() → bounding boxes + texto en BGR
-  └── _try_log() → access_log + screenshot si desconocido
-        ↓
-MJPEG stream → <img src="/video_feed">
-
-AlertManager.update() → SSE /events → {"alert": bool} → overlay rojo en frontend
-```
-
----
-
-## Parámetros clave para ajustar
-
-| Archivo | Variable | Valor actual | Efecto |
-|---------|----------|-------------|--------|
-| recognition.py | `LBPH_THRESH` | `85` | ↓ = más estricto, ↑ = más permisivo |
-| recognition.py | `PROCESS_EVERY_N` | `3` | ↑ = más rápido, menos preciso |
-| recognition.py | `LOG_COOLDOWN` | `5` seg | Tiempo mínimo entre logs de la misma persona |
-| recognition.py | `FACE_SIZE` | `(100,100)` | Resolución de normalización de rostros |
-| alerts.py | `UNKNOWN_THRESHOLD` | `3` | Detecciones seguidas para disparar alerta |
-| alerts.py | `ALERT_RESET_SECONDS` | `10` | Tiempo de enfriamiento de alertas |
-
----
-
-## Historial de decisiones técnicas
-
-1. **`face_recognition` → OpenCV LBPH** — `dlib` no instalaba en Python 3.14 en Windows. LBPH es parte de `opencv-contrib-python`, cero dependencias extras.
-2. **`CAP_DSHOW` en lugar de `CAP_MSMF`** — Error MSMF `-1072875772` en laptops Windows. DirectShow es más compatible.
-3. **Blobs JPEG en SQLite** — Simplifica portabilidad: un solo archivo `.db` contiene todo. No hay carpeta de imágenes que gestionar.
-4. **SSE en lugar de WebSocket** — Más simple para push server→cliente. Solo se necesita notificar `{alert: bool}`.
-
----
-
-## Estado actual al último commit
-
-- [x] Estructura completa del proyecto
-- [x] Motor LBPH funcional (detección + reconocimiento + dibujo)
-- [x] Sistema de enrollamiento vía web
-- [x] Streaming MJPEG en tiempo real con deduplicación por `frame_id`
-- [x] Alertas SSE para desconocidos
-- [x] Panel de administración
-- [x] `VideoCamera` auto-detecta backend (default / DSHOW / índice 1)
-- [x] Flip horizontal (espejo) en captura
-- [x] `use_reloader=False` en Flask para evitar doble instancia de cámara
-- [x] Enrollamiento guiado multi-ángulo (6 pasos, ~15 muestras, auto-captura con countdown)
-- [x] Endpoint `/face_status` para detección en tiempo real desde el frontend
-- [ ] Detección de cara parcial (pendiente)
-- [ ] Modo demo con datos pre-cargados
-- [ ] README desactualizado (aún menciona dlib — no se usa)
-
----
-
-## Cómo correr el proyecto
-
-```powershell
-cd "C:\Users\angel\Desktop\Hackatec\OmniFace"
-pip install opencv-contrib-python flask numpy Pillow
-python run.py
-# → http://localhost:5000
-```
+## Estado al último commit
+- [x] App de escritorio funcional con customtkinter
+- [x] Registro multi-ángulo automático (6 pasos × 10 muestras)
+- [x] LBPH + CLAHE + augmentation bright/dark
+- [x] Detección frontal + perfil
+- [x] System tray (pystray)
+- [x] Gestión de identidades (DB view)
+- [ ] Vista "Historial/Logs" — NO implementada
+- [ ] UI de registro: sin step bubbles ni indicador visual de cara detectada

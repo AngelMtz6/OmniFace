@@ -150,28 +150,65 @@ class OmniFaceApp(ctk.CTk):
 
     def init_registration_view(self):
         self.view_registration = ctk.CTkFrame(self.main_content, fg_color="transparent")
-        
-        self.reg_title = ctk.CTkLabel(self.view_registration, text="Nuevo Registro", font=ctk.CTkFont(size=24, weight="bold"))
-        self.reg_title.pack(pady=20)
 
-        # Entrada de nombre
-        self.name_entry = ctk.CTkEntry(self.view_registration, placeholder_text="Nombre completo", width=300)
-        self.name_entry.pack(pady=10)
+        self.reg_title = ctk.CTkLabel(self.view_registration, text="Nuevo Registro",
+                                      font=ctk.CTkFont(size=22, weight="bold"))
+        self.reg_title.pack(pady=(15, 5))
 
-        # Instrucciones
-        self.instruction_label = ctk.CTkLabel(self.view_registration, text="Ingresa el nombre para comenzar", 
-                                             font=ctk.CTkFont(size=16), text_color="#AAAAAA")
-        self.instruction_label.pack(pady=20)
+        # ── Nombre ──
+        name_row = ctk.CTkFrame(self.view_registration, fg_color="transparent")
+        name_row.pack(pady=5)
+        self.name_entry = ctk.CTkEntry(name_row, placeholder_text="Nombre completo", width=260)
+        self.name_entry.pack(side="left", padx=(0, 8))
+        self.btn_capture = ctk.CTkButton(name_row, text="Iniciar", width=100,
+                                         command=self.handle_registration_click)
+        self.btn_capture.pack(side="left")
 
-        # Área de Video pequeña para registro
-        self.video_reg_label = tk.Label(self.view_registration, bg="#1a1a1a", width=400, height=300)
-        self.video_reg_label.pack(pady=10)
+        # ── Step bubbles (6 círculos de pasos) ──
+        self.step_bubbles_frame = ctk.CTkFrame(self.view_registration, fg_color="transparent")
+        self.step_bubbles_frame.pack(pady=(8, 2))
+        self._step_icons  = ["😐", "⬅", "➡", "⬆", "⬇", "😊"]
+        self._step_labels_short = ["Frente", "Izq", "Der", "Arriba", "Abajo", "Sonríe"]
+        self._bubble_widgets = []
+        for i in range(6):
+            col = ctk.CTkFrame(self.step_bubbles_frame, fg_color="transparent")
+            col.pack(side="left", padx=6)
+            circle = ctk.CTkLabel(col, text=self._step_icons[i],
+                                  width=46, height=46,
+                                  corner_radius=23,
+                                  fg_color="#2a2a3a",
+                                  font=ctk.CTkFont(size=18))
+            circle.pack()
+            lbl = ctk.CTkLabel(col, text=self._step_labels_short[i],
+                               font=ctk.CTkFont(size=10), text_color="#666666")
+            lbl.pack()
+            self._bubble_widgets.append((circle, lbl))
 
-        # Botón de Captura
-        self.btn_capture = ctk.CTkButton(self.view_registration, text="Comenzar Captura", command=self.handle_registration_click)
-        self.btn_capture.pack(pady=20)
+        # ── Instrucción actual ──
+        self.instruction_label = ctk.CTkLabel(self.view_registration,
+                                              text="Ingresa el nombre y presiona Iniciar",
+                                              font=ctk.CTkFont(size=14), text_color="#AAAAAA")
+        self.instruction_label.pack(pady=(6, 2))
 
-        self.progress_label = ctk.CTkLabel(self.view_registration, text="Progreso: 0 / 6")
+        # ── Indicador de detección ──
+        self.face_detect_label = ctk.CTkLabel(self.view_registration, text="⬤  Buscando rostro…",
+                                              font=ctk.CTkFont(size=12), text_color="#555555")
+        self.face_detect_label.pack(pady=(0, 4))
+
+        # ── Video ──
+        self.video_reg_frame = ctk.CTkFrame(self.view_registration, corner_radius=10,
+                                            border_width=3, border_color="#2a2a3a")
+        self.video_reg_frame.pack(pady=4)
+        self.video_reg_label = tk.Label(self.video_reg_frame, bg="#1a1a1a", width=400, height=280)
+        self.video_reg_label.pack(padx=3, pady=3)
+
+        # ── Barra de progreso del paso actual ──
+        self.step_progress = ctk.CTkProgressBar(self.view_registration, width=400, height=8)
+        self.step_progress.set(0)
+        self.step_progress.pack(pady=(4, 2))
+
+        self.progress_label = ctk.CTkLabel(self.view_registration, text="Paso 0/6  |  Muestras: 0/60",
+                                           font=ctk.CTkFont(size=11), text_color="#888888")
         self.progress_label.pack()
 
     def show_view(self, view_name):
@@ -224,9 +261,16 @@ class OmniFaceApp(ctk.CTk):
         if hasattr(self, 'name_entry'):
             self.name_entry.delete(0, 'end')
             self.name_entry.configure(state="normal")
-            self.instruction_label.configure(text="Ingresa el nombre para comenzar", text_color="#AAAAAA")
-            self.btn_capture.configure(text="Comenzar Registro", fg_color=['#3B8ED0', '#1F538D'], state="normal")
-            self.progress_label.configure(text="Progreso: 0 / 6")
+            self.instruction_label.configure(text="Ingresa el nombre y presiona Iniciar", text_color="#AAAAAA")
+            self.btn_capture.configure(text="Iniciar", fg_color=['#3B8ED0', '#1F538D'], state="normal")
+            self.progress_label.configure(text="Paso 0/6  |  Muestras: 0/60")
+            self.face_detect_label.configure(text="⬤  Buscando rostro…", text_color="#555555")
+            self.step_progress.set(0)
+            self.video_reg_frame.configure(border_color="#2a2a3a")
+            # Resetear bubbles
+            for i, (circle, lbl) in enumerate(self._bubble_widgets):
+                circle.configure(fg_color="#2a2a3a", text_color="white")
+                lbl.configure(text_color="#666666")
 
     def handle_registration_click(self):
         if not self.is_capturing_auto:
@@ -236,16 +280,35 @@ class OmniFaceApp(ctk.CTk):
                 return
             self.registration_name = name
             self.name_entry.configure(state="disabled")
-            self.btn_capture.configure(text="Registrando...", state="disabled")
+            self.btn_capture.configure(text="Registrando…", state="disabled")
             self.is_capturing_auto = True
             self.current_step = 1
             self.update_registration_ui()
+
+    def _update_step_bubbles(self, active_step):
+        """Pinta los círculos de pasos: gris=pendiente, azul=activo, verde=completado."""
+        for i, (circle, lbl) in enumerate(self._bubble_widgets):
+            step_num = i + 1
+            if step_num < active_step:
+                circle.configure(fg_color="#1a6b3a", text_color="white")  # verde completado
+                lbl.configure(text_color="#50CD64")
+            elif step_num == active_step:
+                circle.configure(fg_color="#1F538D", text_color="white")  # azul activo
+                lbl.configure(text_color="#5AABFF")
+            else:
+                circle.configure(fg_color="#2a2a3a", text_color="white")  # gris pendiente
+                lbl.configure(text_color="#666666")
 
     def update_registration_ui(self):
         if self.current_step <= len(self.registration_steps):
             instruction = self.registration_steps[self.current_step - 1]
             self.instruction_label.configure(text=instruction, text_color="#50CD64")
-            self.progress_label.configure(text=f"Pose {self.current_step}/6 | Muestras: {self.current_step_samples}/{self.samples_per_step}")
+            total = len(self.registration_steps) * self.samples_per_step
+            done  = (self.current_step - 1) * self.samples_per_step + self.current_step_samples
+            self.progress_label.configure(
+                text=f"Paso {self.current_step}/6  |  Muestras: {done}/{total}")
+            self.step_progress.set(self.current_step_samples / self.samples_per_step)
+            self._update_step_bubbles(self.current_step)
         else:
             self.finish_registration()
 
@@ -268,23 +331,36 @@ class OmniFaceApp(ctk.CTk):
             rects = self.engine.profile_detector.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
 
         if len(rects) > 0:
+            # ── Cara detectada ──
+            self.face_detect_label.configure(text="⬤  ¡Rostro detectado! Capturando…",
+                                             text_color="#50CD64")
+            self.video_reg_frame.configure(border_color="#50CD64")
+
             x, y, w, h = rects[0]
             face = cv2.resize(gray[y:y+h, x:x+w], (100, 100))
             _, buf = cv2.imencode('.jpg', face)
-            
+
             self.captured_samples.append(buf.tobytes())
             self.current_step_samples += 1
-            
-            # Si completamos las muestras de esta pose, pasamos a la siguiente
+
             if self.current_step_samples >= self.samples_per_step:
+                # Paso completado — marcar burbuja verde y pausar
+                self._update_step_bubbles(self.current_step)   # marca actual como completado visual
                 self.current_step += 1
                 self.current_step_samples = 0
-                self._last_step_time = time.time() # Iniciar pausa para el siguiente paso
-                
+                self._last_step_time = time.time()
+                if self.current_step <= len(self.registration_steps):
+                    self.face_detect_label.configure(
+                        text=f"✓  Paso {self.current_step - 1}/6 completo — prepárate para el siguiente",
+                        text_color="#FFA500")
+                    self.video_reg_frame.configure(border_color="#FFA500")
+                    self.step_progress.set(0)
+
             self.update_registration_ui()
         else:
-            # Feedback visual de que no se detecta rostro
-            self.instruction_label.configure(text_color="#FF5555")
+            # ── Sin cara ──
+            self.face_detect_label.configure(text="⬤  Buscando rostro…", text_color="#FF5555")
+            self.video_reg_frame.configure(border_color="#552222")
 
     def finish_registration(self):
         from app.database import save_identity
