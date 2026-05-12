@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
+# pyrefly: ignore [missing-import]
 import customtkinter as ctk
 import cv2
 from PIL import Image, ImageTk
