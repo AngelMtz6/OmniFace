@@ -337,7 +337,8 @@ class OmniFaceApp(ctk.CTk):
             self.video_reg_frame.configure(border_color="#50CD64")
 
             x, y, w, h = rects[0]
-            face = cv2.resize(gray[y:y+h, x:x+w], (100, 100))
+            # Alinear + CLAHE + resize 150×150 (mismo pipeline que retrain)
+            face = self.engine._prepare_face(gray[y:y+h, x:x+w])
             _, buf = cv2.imencode('.jpg', face)
 
             self.captured_samples.append(buf.tobytes())
