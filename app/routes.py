@@ -148,6 +148,19 @@ def alert_status():
     return jsonify(engine.alert_manager.get_status())
 
 
+@main_bp.route('/face_status')
+def face_status():
+    """Detecta si hay una cara visible en el frame actual. Usado por el enrollamiento guiado."""
+    frame, _ = camera.get_frame()
+    if frame is None:
+        return jsonify({'face_detected': False, 'count': 0})
+    gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    rects = engine.detector.detectMultiScale(
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+    )
+    return jsonify({'face_detected': len(rects) > 0, 'count': int(len(rects))})
+
+
 # ── Server-Sent Events (alertas en tiempo real) ───────────────────────────────
 
 @main_bp.route('/events')

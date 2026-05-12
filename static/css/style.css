@@ -306,14 +306,265 @@ a { text-decoration: none; color: inherit; }
 .event-conf { font-size: .75rem; color: var(--text-2); font-family: var(--mono); }
 .event-time { font-size: .72rem; color: var(--text-3); font-family: var(--mono); white-space: nowrap; }
 
-/* ── Register page ──────────────────────────────────────────────────────── */
+/* ── Register page (guided enrollment) ──────────────────────────────────── */
+.enroll-layout {
+  display: grid;
+  grid-template-columns: 500px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 960px) { .enroll-layout { grid-template-columns: 1fr; } }
+
+/* Columna cámara */
+.enroll-camera-col { display: flex; flex-direction: column; gap: .9rem; }
+
+.name-row { display: flex; gap: .6rem; }
+.name-row .input-field { flex: 1; }
+
+/* Wrapper de cámara con overlays */
+.cam-wrapper {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 4/3;
+}
+
+.live-view {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Marco de detección */
+.cam-border {
+  position: absolute;
+  inset: 0;
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+  pointer-events: none;
+  transition: border-color .3s, box-shadow .3s;
+}
+.cam-border.detected {
+  border-color: var(--success);
+  box-shadow: inset 0 0 20px rgba(16,185,129,.2);
+}
+.cam-border.done {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 20px rgba(108,99,255,.2);
+}
+
+/* Overlay de instrucción */
+.cam-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: .9rem;
+  background: linear-gradient(to bottom, rgba(0,0,0,.55) 0%, transparent 35%, transparent 65%, rgba(0,0,0,.6) 100%);
+  pointer-events: none;
+}
+
+.step-bubble {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: rgba(15,15,30,.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 40px;
+  padding: .5rem 1.1rem;
+  font-weight: 600;
+  font-size: .875rem;
+}
+.step-icon { font-size: 1.2rem; }
+
+.face-indicator {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: rgba(15,15,30,.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 40px;
+  padding: .4rem 1rem;
+  font-size: .8rem;
+  color: var(--text-2);
+}
+
+.face-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: background .2s, box-shadow .2s;
+}
+.face-dot.detected {
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  animation: blink .8s infinite;
+}
+
+/* Countdown circular */
+.countdown-wrap {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-ring { width: 72px; height: 72px; transform: rotate(-90deg); }
+.ring-bg  { fill: none; stroke: rgba(255,255,255,.15); stroke-width: 5; }
+.ring-fg  {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset .05s linear;
+}
+
+.countdown-num {
+  position: absolute;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-family: var(--mono);
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0,0,0,.6);
+}
+
+/* Barra de progreso de pasos */
+.steps-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+}
+
+.steps-track {
+  height: 5px;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0%;
+  transition: width .4s ease;
+  margin-bottom: .6rem;
+}
+
+.steps-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: .78rem;
+  color: var(--text-2);
+  font-family: var(--mono);
+}
+
+/* Columna derecha */
+.enroll-right-col { display: flex; flex-direction: column; gap: .9rem; }
+
+/* Info card */
+.enroll-info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+.enroll-info-card h3 { font-size: .95rem; margin-bottom: .75rem; color: var(--text-2); }
+
+.how-list { padding-left: 1.2rem; display: flex; flex-direction: column; gap: .45rem; }
+.how-list li { font-size: .85rem; color: var(--text-2); }
+.how-list li strong { color: var(--text-1); }
+
+/* Steps grid (preview de pasos) */
+.enroll-steps-preview {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .85rem;
+}
+
+.steps-grid { display: flex; flex-direction: column; gap: .4rem; }
+
+.step-pill {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .75rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all .2s;
+  font-size: .82rem;
+}
+.step-pill.active {
+  background: rgba(108,99,255,.12);
+  border-color: var(--accent);
+  color: var(--text-1);
+}
+.step-pill.done {
+  background: rgba(16,185,129,.08);
+  border-color: rgba(16,185,129,.3);
+  opacity: .75;
+}
+
+.pill-icon  { font-size: 1rem; flex-shrink: 0; }
+.pill-label { flex: 1; color: var(--text-2); }
+.step-pill.active .pill-label { color: var(--text-1); font-weight: 500; }
+.pill-status { font-family: var(--mono); font-size: .75rem; color: var(--text-3); }
+.step-pill.done .pill-status { color: var(--success); }
+
+/* Thumbnails */
+.thumbnails-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .85rem;
+}
+
+.thumb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: .65rem;
+}
+
+.thumbnail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  min-height: 44px;
+}
+
+.thumbnail {
+  width: 44px; height: 44px;
+  object-fit: cover;
+  border-radius: 5px;
+  border: 2px solid var(--success);
+  transition: transform .15s;
+}
+.thumbnail:hover { transform: scale(1.5); z-index: 10; position: relative; }
+
+/* Status y botones */
+.enroll-status {
+  padding: .65rem .9rem;
+  border-radius: 7px;
+  font-size: .85rem;
+  font-weight: 500;
+  display: none;
+}
+.enroll-status.success { background: rgba(16,185,129,.12); color: var(--success); border: 1px solid rgba(16,185,129,.3); display: block; }
+.enroll-status.error   { background: rgba(239,68,68,.12);  color: var(--danger);  border: 1px solid rgba(239,68,68,.3);  display: block; }
+
+/* LEGADO — mantener por compatibilidad con otros templates */
 .register-layout {
   display: grid;
   grid-template-columns: 480px 1fr;
   gap: 1.5rem;
   align-items: start;
 }
-
 @media (max-width: 860px) { .register-layout { grid-template-columns: 1fr; } }
 
 .register-card {
