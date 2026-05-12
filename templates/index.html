@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Monitor en Vivo{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Monitor en Vivo</h1>
+  <p class="subtitle">Reconocimiento facial en tiempo real</p>
+</div>
+
+<div class="monitor-layout">
+
+  <div class="video-wrapper">
+    <div class="video-frame">
+      <img src="/video_feed" id="videoFeed" alt="Feed en vivo">
+      <div class="alert-overlay" id="alertOverlay">
+        <div class="alert-banner">
+          <span>⚠</span>
+          <span>PERSONA NO IDENTIFICADA DETECTADA</span>
+        </div>
+      </div>
+    </div>
+    <div class="video-footer">
+      <span class="rec-badge"><span class="rec-dot"></span>EN VIVO</span>
+      <span class="cam-label">Cámara 01 — Principal</span>
+    </div>
+  </div>
+
+  <div class="side-panel">
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-label">Registrados</div>
+        <div class="stat-value" id="totalIdentities">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Accesos Hoy</div>
+        <div class="stat-value success" id="knownToday">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Desconocidos</div>
+        <div class="stat-value danger" id="unknownToday">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Eventos</div>
+        <div class="stat-value" id="totalAccesses">—</div>
+      </div>
+    </div>
+
+    <div class="events-card">
+      <div class="events-header">
+        <span>Últimos Eventos</span>
+        <span class="events-badge" id="eventsBadge">0</span>
+      </div>
+      <div id="recentEvents" class="events-list"></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Alertas en tiempo real via SSE
+const evtSource = new EventSource('/events');
+evtSource.onmessage = (e) => {
+  const { alert } = JSON.parse(e.data);
+  document.getElementById('alertOverlay').classList.toggle('visible', alert);
+  const dot  = document.querySelector('#navAlert .status-dot');
+  const lbl  = document.querySelector('#navAlert .status-label');
+  dot.className  = 'status-dot ' + (alert ? 'danger' : 'ok');
+  lbl.textContent = alert ? 'ALERTA' : 'Sistema Activo';
+};
+
+async function refreshStats() {
+  const res  = await fetch('/stats');
+  const data = await res.json();
+  document.getElementById('totalIdentities').textContent = data.total_identities;
+  document.getElementById('knownToday').textContent      = data.known_today;
+  document.getElementById('unknownToday').textContent    = data.unknown_today;
+  document.getElementById('totalAccesses').textContent   = data.total_accesses;
+}
+
+async function refreshLogs() {
+  const res  = await fetch('/logs');
+  const logs = await res.json();
+  document.getElementById('eventsBadge').textContent = logs.length;
+  document.getElementById('recentEvents').innerHTML = logs.slice(0, 10).map(log => `
+    <div class="event-item ${log.status}">
+      <div class="event-dot ${log.status}"></div>
+      <div class="event-body">
+        <span class="event-name">${log.identity_name}</span>
+        <span class="event-conf">${log.confidence ? log.confidence.toFixed(1) + '%' : '—'}</span>
+      </div>
+      <span class="event-time">${new Date(log.timestamp).toLocaleTimeString('es-MX')}</span>
+    </div>
+  `).join('') || '<p class="empty-msg">Sin eventos registrados</p>';
+}
+
+refreshStats();
+refreshLogs();
+setInterval(() => { refreshStats(); refreshLogs(); }, 3000);
+</script>
+{% endblock %}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniFace — {% block title %}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-brand">
+      <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+        <path d="M12 6a6 6 0 0 1 6 6"/>
+        <path d="M12 18a6 6 0 0 1-6-6"/>
+      </svg>
+      <span class="brand-name">OmniFace</span>
+    </div>
+
+    <div class="nav-links">
+      <a href="/"         class="nav-link {% if request.endpoint == 'main.index'    %}active{% endif %}">Monitor</a>
+      <a href="/register" class="nav-link {% if request.endpoint == 'main.register' %}active{% endif %}">Registrar</a>
+      <a href="/admin"    class="nav-link {% if request.endpoint == 'main.admin'    %}active{% endif %}">Panel</a>
+    </div>
+
+    <div class="nav-status" id="navAlert">
+      <span class="status-dot ok"></span>
+      <span class="status-label">Sistema Activo</span>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Registrar Identidad{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Registrar Identidad</h1>
+  <p class="subtitle">Captura mínimo 5 imágenes para mayor precisión en el reconocimiento</p>
+</div>
+
+<div class="register-layout">
+
+  <div class="register-card">
+    <div class="form-group">
+      <label class="form-label" for="personName">Nombre completo</label>
+      <input type="text" id="personName" class="input-field" placeholder="Ej. María García">
+    </div>
+
+    <div class="capture-area">
+      <img src="/video_feed" id="liveView" alt="Vista en vivo" class="live-view">
+    </div>
+
+    <div class="capture-controls">
+      <button class="btn btn-primary" onclick="captureFrame()">
+        <span>📸</span> Capturar Muestra
+      </button>
+      <div class="capture-counter">
+        <span id="captureCount" class="counter-num">0</span>
+        <span class="counter-slash">/</span>
+        <span class="counter-min">5</span>
+        <span class="counter-label">capturas</span>
+      </div>
+    </div>
+
+    <div id="thumbnailRow" class="thumbnail-row"></div>
+
+    <button id="enrollBtn" class="btn btn-success btn-full" onclick="enroll()" disabled>
+      ✓ Registrar Identidad
+    </button>
+
+    <div id="enrollStatus" class="enroll-status"></div>
+  </div>
+
+  <div class="register-tips">
+    <h3>Consejos para mejor precisión</h3>
+    <ul class="tips-list">
+      <li>Buena iluminación frontal</li>
+      <li>Captura diferentes ángulos leves</li>
+      <li>Captura con y sin lentes</li>
+      <li>Evita obstruir el rostro</li>
+      <li>Mínimo 5 muestras, recomendado 8+</li>
+    </ul>
+
+    <div class="registered-preview">
+      <h3>Identidades Registradas</h3>
+      <div id="registeredList" class="registered-list"></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const capturedFrames = [];
+const MIN_CAPTURES = 5;
+
+async function captureFrame() {
+  const res  = await fetch('/capture_frame');
+  const data = await res.json();
+  if (data.error) { showStatus(data.error, 'error'); return; }
+
+  capturedFrames.push(data.image);
+
+  const thumb = document.createElement('img');
+  thumb.src       = data.image;
+  thumb.className = 'thumbnail';
+  document.getElementById('thumbnailRow').appendChild(thumb);
+
+  const count = capturedFrames.length;
+  document.getElementById('captureCount').textContent = count;
+  document.getElementById('enrollBtn').disabled = count < MIN_CAPTURES;
+}
+
+async function enroll() {
+  const name = document.getElementById('personName').value.trim();
+  if (!name) { showStatus('Ingresa un nombre', 'error'); return; }
+
+  const btn = document.getElementById('enrollBtn');
+  btn.disabled    = true;
+  btn.textContent = 'Procesando...';
+
+  const res  = await fetch('/enroll', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ name, frames: capturedFrames }),
+  });
+  const data = await res.json();
+
+  if (data.success) {
+    showStatus(`✓ ${data.name} registrado con ${data.samples} muestras`, 'success');
+    capturedFrames.length = 0;
+    document.getElementById('thumbnailRow').innerHTML   = '';
+    document.getElementById('captureCount').textContent = '0';
+    document.getElementById('personName').value         = '';
+    loadRegistered();
+  } else {
+    showStatus(`✗ ${data.error}`, 'error');
+  }
+
+  btn.disabled    = false;
+  btn.textContent = '✓ Registrar Identidad';
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('enrollStatus');
+  el.textContent = msg;
+  el.className   = 'enroll-status ' + type;
+}
+
+async function loadRegistered() {
+  const res   = await fetch('/identities');
+  const list  = await res.json();
+  document.getElementById('registeredList').innerHTML = list.map(p => `
+    <div class="registered-item">
+      <div class="id-avatar">${p.name[0].toUpperCase()}</div>
+      <span class="id-name">${p.name}</span>
+    </div>
+  `).join('') || '<p class="empty-msg">Sin registros</p>';
+}
+
+loadRegistered();
+</script>
+{% endblock %}
