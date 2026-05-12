@@ -38,6 +38,15 @@ class OmniFaceApp(ctk.CTk):
         self.current_view = "monitoring"
         self.is_minimized = False
         
+        # Estado de Verificación Liveness (3D simulado)
+        self.is_verifying = False
+        self.verifying_name = ""
+        self.verify_start_time = 0
+        self.current_challenge = "" # "Frente", "Perfil"
+        self.verify_step = 0
+        self.verify_timeout = 20 # segundos
+        self.challenges = ["Perfil", "Frente"] # Secuencia simple para simular 3D
+        
         # Estado de Registro
         self.registration_name = ""
         self.current_step = 0
@@ -281,6 +290,10 @@ class OmniFaceApp(ctk.CTk):
             # Procesar según vista
             if self.current_view == "monitoring" and not self.is_minimized:
                 processed = self.engine.process_frame(frame)
+                
+                # Lógica de Verificación Liveness
+                self.handle_liveness_logic(processed)
+                
                 self.display_frame(processed, self.video_label)
             
             elif self.current_view == "registration":
@@ -293,6 +306,63 @@ class OmniFaceApp(ctk.CTk):
                 self.engine.process_frame(frame)
 
         self.after(20, self.update_video)
+
+    def handle_liveness_logic(self, frame):
+        results = self.engine._last_results
+        now = time.time()
+        
+        if not self.is_verifying:
+            # Buscar alguien conocido para iniciar verificación
+            for r in results:
+                if r['known'] and r['confidence'] > 60:
+                    self.is_verifying = True
+                    self.verifying_name = r['name']
+                    self.verify_start_time = now
+                    self.verify_step = 0
+                    self.current_challenge = self.challenges[0]
+                    break
+        else:
+            # Verificar progreso
+            elapsed = now - self.verify_start_time
+            if elapsed > self.verify_timeout:
+                self.is_verifying = False
+                messagebox.showwarning("Fallo de Seguridad", f"Tiempo de verificación agotado para {self.verifying_name}")
+                return
+
+            # Dibujar Overlay de Verificación
+            h, w = frame.shape[:2]
+            overlay_h = 100
+            cv2.rectangle(frame, (0, 0), (w, overlay_h), (30, 30, 30), -1)
+            
+            # Texto de instrucción
+            status_color = (50, 205, 100) # Verde
+            msg = f"VERIFICANDO: {self.verifying_name.upper()}"
+            instr = f"PASO {self.verify_step + 1}/2: Gire a {self.current_challenge.upper()}"
+            timer = f"TIEMPO: {int(self.verify_timeout - elapsed)}s"
+            
+            cv2.putText(frame, msg, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(frame, instr, (20, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+            cv2.putText(frame, timer, (w - 150, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 255), 2)
+
+            # Comprobar si el usuario cumple el desafío actual
+            match_found = False
+            for r in results:
+                if r['name'] == self.verifying_name and r['pose'] == self.current_challenge:
+                    match_found = True
+                    break
+            
+            if match_found:
+                self.verify_step += 1
+                if self.verify_step >= len(self.challenges):
+                    # Verificación Exitosa
+                    self.is_verifying = False
+                    # Aquí se podría disparar una acción de apertura de puerta, etc.
+                    cv2.rectangle(frame, (0, 0), (w, h), (50, 255, 50), 10)
+                    print(f"ACCESO CONCEDIDO: {self.verifying_name}")
+                else:
+                    self.current_challenge = self.challenges[self.verify_step]
+                    self.verify_start_time = now # Reiniciar tiempo para el siguiente paso? o dejar global? 
+                    # Lo dejamos global (20s para todo) según pidió el usuario
 
     def display_frame(self, frame, label_widget):
         rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
