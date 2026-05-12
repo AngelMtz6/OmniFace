@@ -8,7 +8,7 @@ from .alerts import AlertManager
 
 # ── Parámetros ────────────────────────────────────────────────────────────────
 FACE_SIZE       = (150, 150)  # ↑ de 100 → mayor detalle para LBPH
-MAX_DIST        = 95          # distancia LBPH máxima para "conocido"
+MAX_DIST        = 70          # distancia LBPH — umbral para "conocido"
 PROCESS_EVERY_N = 2           # procesar 1 de cada 2 frames (era 3)
 LOG_COOLDOWN    = 5
 
@@ -86,15 +86,26 @@ class RecognitionEngine:
         return aligned
 
     def _prepare_face(self, gray_roi):
-        """Pipeline completo: alinear → CLAHE → resize."""
-        aligned = self.align_face(gray_roi)
-        enhanced = self._preprocess(aligned)
+        """Pipeline: CLAHE → resize.
+        align_face() desactivado: las muestras en DB son 100×100 (muy chicas
+        para detectar ojos) → alinear en inferencia pero no en entrenamiento
+        genera mismatch de features y nadie es reconocido."""
+        enhanced = self._preprocess(gray_roi)
         return cv2.resize(enhanced, FACE_SIZE)
 
     def _augment(self, img):
-        """4 variantes por imagen: original, bright, dark, flip horizontal."""
+        """8 variantes: original + rotaciones ±15°/±25° + bright + dark + flip.
+        Las rotaciones son la clave para que el modelo tolere inclinaciones de cabeza."""
+        h, w = img.shape[:2]
+
+        def rot(angle):
+            M = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), angle, 1.0)
+            return cv2.warpAffine(img, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
+
         return [
             img,
+            rot(-15), rot(15),
+            rot(-25), rot(25),
             cv2.convertScaleAbs(img, alpha=1.25, beta=35),   # más brillante
             cv2.convertScaleAbs(img, alpha=0.75, beta=-25),  # más oscuro
             cv2.flip(img, 1),                                 # espejo
@@ -220,8 +231,10 @@ class RecognitionEngine:
             return 'Desconocido', 0.0, None
 
         if raw_conf <= MAX_DIST:
-            # Mapeo lineal: 0 dist → 100%, MAX_DIST → 60%
-            confidence = round(100.0 - (raw_conf * 40.0 / MAX_DIST), 1)
+            # Curva de potencia: dist=0→100%, dist=5→97%, dist=20→91%, dist=MAX_DIST→0%
+            # Más realista que lineal y sube el número mostrado para buenos matches
+            norm = raw_conf / MAX_DIST          # 0.0 – 1.0
+            confidence = round((1.0 - norm) ** 0.3 * 100, 1)
             name = id_map.get(label, 'Desconocido')
             return name, confidence, label
 

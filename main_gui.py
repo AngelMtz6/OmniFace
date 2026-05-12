@@ -52,7 +52,7 @@ class OmniFaceApp(ctk.CTk):
         self.registration_name = ""
         self.current_step = 0
         self.captured_samples = []
-        self.samples_per_step = 10
+        self.samples_per_step = 30  # 30 × 6 pasos = 180 muestras totales
         self.current_step_samples = 0
         self.is_capturing_auto = False
         self.registration_steps = [
