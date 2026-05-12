@@ -4,7 +4,6 @@ import time
 
 import cv2
 import numpy as np
-import face_recognition
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 from .camera import VideoCamera
@@ -85,26 +84,31 @@ def enroll():
     if len(frames_b64) < 3:
         return jsonify({'error': 'Se necesitan mínimo 3 capturas'}), 400
 
-    encodings = []
+    detector   = engine.detector
+    face_blobs = []
+
     for b64 in frames_b64:
         img_bytes = base64.b64decode(b64.split(',')[1])
         nparr     = np.frombuffer(img_bytes, np.uint8)
         frame     = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        rgb       = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        gray      = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        locs = face_recognition.face_locations(rgb)
-        encs = face_recognition.face_encodings(rgb, locs)
-        if encs:
-            encodings.append(encs[0])
+        rects = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+        for (x, y, w, h) in rects:
+            face    = cv2.resize(gray[y:y+h, x:x+w], (100, 100))
+            ok, buf = cv2.imencode('.jpg', face)
+            if ok:
+                face_blobs.append(buf.tobytes())
+            break  # una cara por frame
 
-    if not encodings:
+    if not face_blobs:
         return jsonify({'error': 'No se detectó ningún rostro en las capturas'}), 400
 
-    identity_id = save_identity(name, encodings)
-    engine.reload_encodings()
+    identity_id = save_identity(name, face_blobs)
+    engine.retrain()
 
     return jsonify({'success': True, 'id': identity_id,
-                    'name': name, 'samples': len(encodings)})
+                    'name': name, 'samples': len(face_blobs)})
 
 
 @main_bp.route('/identities')
@@ -115,7 +119,7 @@ def identities():
 @main_bp.route('/identity/<int:identity_id>', methods=['DELETE'])
 def delete(identity_id):
     delete_identity(identity_id)
-    engine.reload_encodings()
+    engine.retrain()
     return jsonify({'success': True})
 
 

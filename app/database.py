@@ -1,5 +1,4 @@
 import sqlite3
-import json
 import os
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'omniface.db')
@@ -17,11 +16,18 @@ def init_db():
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS identities (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Almacena cada muestra facial como JPEG 100x100 en escala de grises
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS face_samples (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT    NOT NULL,
-            photo_path  TEXT,
-            encodings   TEXT    NOT NULL,
-            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            identity_id INTEGER NOT NULL,
+            face_data   BLOB    NOT NULL,
+            FOREIGN KEY (identity_id) REFERENCES identities(id) ON DELETE CASCADE
         )
     ''')
     c.execute('''
@@ -39,14 +45,16 @@ def init_db():
     conn.close()
 
 
-def save_identity(name, encodings, photo_path=None):
+def save_identity(name, face_blobs):
+    """Crea identidad y guarda las muestras faciales. Retorna el nuevo id."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute(
-        'INSERT INTO identities (name, encodings, photo_path) VALUES (?, ?, ?)',
-        (name, json.dumps([e.tolist() for e in encodings]), photo_path)
-    )
+    c.execute('INSERT INTO identities (name) VALUES (?)', (name,))
     identity_id = c.lastrowid
+    c.executemany(
+        'INSERT INTO face_samples (identity_id, face_data) VALUES (?, ?)',
+        [(identity_id, blob) for blob in face_blobs]
+    )
     conn.commit()
     conn.close()
     return identity_id
@@ -55,21 +63,22 @@ def save_identity(name, encodings, photo_path=None):
 def get_all_identities():
     conn = get_connection()
     rows = conn.execute(
-        'SELECT id, name, photo_path, created_at FROM identities ORDER BY created_at DESC'
+        'SELECT id, name, created_at FROM identities ORDER BY created_at DESC'
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def get_all_encodings():
+def get_all_face_samples():
+    """Retorna lista de (identity_id, name, face_data_bytes)."""
     conn = get_connection()
-    rows = conn.execute('SELECT id, name, encodings FROM identities').fetchall()
+    rows = conn.execute('''
+        SELECT fs.identity_id, i.name, fs.face_data
+        FROM face_samples fs
+        JOIN identities i ON fs.identity_id = i.id
+    ''').fetchall()
     conn.close()
-    result = []
-    for r in rows:
-        for enc in json.loads(r['encodings']):
-            result.append({'id': r['id'], 'name': r['name'], 'encoding': enc})
-    return result
+    return [(r['identity_id'], r['name'], bytes(r['face_data'])) for r in rows]
 
 
 def delete_identity(identity_id):
