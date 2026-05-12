@@ -21,29 +21,21 @@ class VideoCamera:
         if self._initialized:
             return
         
-        print("DEBUG: Iniciando VideoCamera...")
         self.cap = cv2.VideoCapture(0)
         
         if not self.cap.isOpened():
-            print("DEBUG: Index 0 (Default) falló. Intentando con CAP_DSHOW...")
             self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
             
         if not self.cap.isOpened():
-            print("DEBUG: CAP_DSHOW falló. Intentando con index 1...")
             self.cap = cv2.VideoCapture(1)
 
         if not self.cap.isOpened():
-            print("ERROR: No se pudo abrir ninguna cámara.")
             self.cap = cv2.VideoCapture()
         else:
-            print("DEBUG: Cámara abierta exitosamente.")
             # Intentar leer un frame para confirmar
             ret, frame = self.cap.read()
             if ret:
-                print("DEBUG: Frame capturado con éxito en init.")
                 self._frame = frame
-            else:
-                print("DEBUG: No se pudo leer frame en init.")
             
         self._frame_lock = threading.Lock()
         self._running = True

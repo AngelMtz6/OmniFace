@@ -22,10 +22,9 @@ def init_db():
             conn.close()
             
             if 'encodings' in columns:
-                print("DEBUG: Detectado esquema antiguo. Recreando base de datos...")
                 os.remove(DB_PATH)
-        except Exception as e:
-            print(f"DEBUG: Error verificando esquema: {e}")
+        except Exception:
+            pass
 
     conn = get_connection()
     c = conn.cursor()
