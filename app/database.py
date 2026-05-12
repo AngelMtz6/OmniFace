@@ -6,12 +6,27 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'omni
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=20)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    # Verificar si la base de datos tiene el esquema antiguo
+    if os.path.exists(DB_PATH):
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(identities)")
+            columns = [column[1] for column in cursor.fetchall()]
+            conn.close()
+            
+            if 'encodings' in columns:
+                print("DEBUG: Detectado esquema antiguo. Recreando base de datos...")
+                os.remove(DB_PATH)
+        except Exception as e:
+            print(f"DEBUG: Error verificando esquema: {e}")
+
     conn = get_connection()
     c = conn.cursor()
     c.execute('''

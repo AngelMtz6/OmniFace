@@ -75,9 +75,12 @@ def capture_frame():
 
 @main_bp.route('/enroll', methods=['POST'])
 def enroll():
+    print("DEBUG: Iniciando proceso de enroll...")
     data       = request.get_json()
     name       = (data.get('name') or '').strip()
     frames_b64 = data.get('frames', [])
+
+    print(f"DEBUG: Nombre: {name}, Muestras recibidas: {len(frames_b64)}")
 
     if not name:
         return jsonify({'error': 'Nombre requerido'}), 400
@@ -87,25 +90,37 @@ def enroll():
     detector   = engine.detector
     face_blobs = []
 
-    for b64 in frames_b64:
-        img_bytes = base64.b64decode(b64.split(',')[1])
-        nparr     = np.frombuffer(img_bytes, np.uint8)
-        frame     = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        gray      = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    for i, b64 in enumerate(frames_b64):
+        try:
+            img_bytes = base64.b64decode(b64.split(',')[1])
+            nparr     = np.frombuffer(img_bytes, np.uint8)
+            frame     = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            gray      = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        rects = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
-        for (x, y, w, h) in rects:
-            face    = cv2.resize(gray[y:y+h, x:x+w], (100, 100))
-            ok, buf = cv2.imencode('.jpg', face)
-            if ok:
-                face_blobs.append(buf.tobytes())
-            break  # una cara por frame
+            rects = detector.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+            print(f"DEBUG: Frame {i}: {len(rects)} rostros detectados")
+            for (x, y, w, h) in rects:
+                face    = cv2.resize(gray[y:y+h, x:x+w], (100, 100))
+                ok, buf = cv2.imencode('.jpg', face)
+                if ok:
+                    face_blobs.append(buf.tobytes())
+                break  # una cara por frame
+        except Exception as e:
+            print(f"DEBUG: Error procesando frame {i}: {str(e)}")
+
+    print(f"DEBUG: Total face_blobs extraídos: {len(face_blobs)}")
 
     if not face_blobs:
         return jsonify({'error': 'No se detectó ningún rostro en las capturas'}), 400
 
-    identity_id = save_identity(name, face_blobs)
-    engine.retrain()
+    try:
+        identity_id = save_identity(name, face_blobs)
+        print(f"DEBUG: Identidad guardada con ID: {identity_id}")
+        engine.retrain()
+        print("DEBUG: Engine retrained con éxito")
+    except Exception as e:
+        print(f"DEBUG: Error al guardar o reentrenar: {str(e)}")
+        return jsonify({'error': f'Error interno: {str(e)}'}), 500
 
     return jsonify({'success': True, 'id': identity_id,
                     'name': name, 'samples': len(face_blobs)})
