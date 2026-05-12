@@ -494,6 +494,7 @@ class OmniFaceApp(ctk.CTk):
         self.is_minimized = False
 
     def quit_app(self, icon=None, item=None):
+        self.engine.shutdown()   # liberar pool de hilos
         self.camera.release()
         self.tray_icon.stop()
         self.destroy()
