@@ -22,7 +22,7 @@ pip install -r requirements.txt
 ```
 
 > **Alternativa rápida:** si `dlib` falla, descarga el wheel precompilado desde  
-> https://github.com/jloh02/dlib/releases  
+> https://github.com/jloh02/dlib/releases  python run.py
 > y ejecuta: `pip install dlib-19.24.x-cp311-win_amd64.whl`
 
 ### 2. Ejecutar
