@@ -78,7 +78,7 @@ class RecognitionEngine:
             return gray_roi  # ya alineada, no rotar innecesariamente
 
         # Rotar alrededor del punto medio entre ojos
-        cx, cy = (lx + rx) // 2, (ly + ry) // 2
+        cx, cy = float((lx + rx) // 2), float((ly + ry) // 2)
         M = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
         aligned = cv2.warpAffine(gray_roi, M, (w, h),
                                  flags=cv2.INTER_CUBIC,
