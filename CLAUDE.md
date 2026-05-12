@@ -107,6 +107,11 @@ Usa `haarcascade_eye_tree_eyeglasses.xml` dentro del ROI de la cara.
 Si detecta ≥2 ojos → rota para horizontalizarlos → `warpAffine`.
 Si no detecta → retorna original sin modificar (nunca distorsiona).
 
+### _detect_all_faces() — 3 cascades + NMS
+Los 3 cascades corren **siempre** (frontal + perfil D + perfil I con flip).
+Resultado unificado pasa por `_nms(iou_thr=0.35)` para eliminar cajas solapadas.
+Fix para "no reconoce de lado": antes el perfil sólo corría si el frontal no disparaba nada; a 45° el frontal disparaba débilmente → perfil bloqueado.
+
 ---
 
 ## DB Schema
@@ -137,5 +142,6 @@ access_log   (id, identity_id, identity_name, confidence, status, screenshot_pat
 - [x] Face alignment sin dlib (`haarcascade_eye_tree_eyeglasses`)
 - [x] FACE_SIZE 150×150, radius=2, 4× augmentation
 - [x] Registro guarda muestras alineadas 150×150 (`_prepare_face`)
+- [x] `_detect_all_faces()` — 3 cascades siempre + NMS (fix perfil no reconocido)
 - [ ] Vista "Historial/Logs" — NO implementada
 - [ ] Re-registrar personas existentes para aprovechar nuevo pipeline (DB vieja tiene 100×100 sin alinear)
