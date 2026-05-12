@@ -51,6 +51,9 @@ class OmniFaceApp(ctk.CTk):
         self.registration_name = ""
         self.current_step = 0
         self.captured_samples = []
+        self.samples_per_step = 10
+        self.current_step_samples = 0
+        self.is_capturing_auto = False
         self.registration_steps = [
             "Ponte de frente, muy de cerca",
             "Ahora aléjate un poco",
@@ -213,61 +216,74 @@ class OmniFaceApp(ctk.CTk):
 
     def reset_registration_state(self):
         self.current_step = 0
+        self.current_step_samples = 0
         self.captured_samples = []
         self.registration_name = ""
+        self.is_capturing_auto = False
         if hasattr(self, 'name_entry'):
             self.name_entry.delete(0, 'end')
             self.name_entry.configure(state="normal")
             self.instruction_label.configure(text="Ingresa el nombre para comenzar", text_color="#AAAAAA")
-            self.btn_capture.configure(text="Comenzar Captura", fg_color=['#3B8ED0', '#1F538D'])
+            self.btn_capture.configure(text="Comenzar Registro", fg_color=['#3B8ED0', '#1F538D'], state="normal")
             self.progress_label.configure(text="Progreso: 0 / 6")
 
     def handle_registration_click(self):
-        if self.registration_name == "":
+        if not self.is_capturing_auto:
             name = self.name_entry.get().strip()
             if not name:
                 messagebox.showwarning("Atención", "Por favor ingresa un nombre")
                 return
             self.registration_name = name
             self.name_entry.configure(state="disabled")
-            self.btn_capture.configure(text="Capturar")
+            self.btn_capture.configure(text="Registrando...", state="disabled")
+            self.is_capturing_auto = True
             self.current_step = 1
             self.update_registration_ui()
-        else:
-            self.perform_step_capture()
 
     def update_registration_ui(self):
         if self.current_step <= len(self.registration_steps):
             instruction = self.registration_steps[self.current_step - 1]
             self.instruction_label.configure(text=instruction, text_color="#50CD64")
-            self.progress_label.configure(text=f"Progreso: {self.current_step - 1} / 6")
+            self.progress_label.configure(text=f"Pose {self.current_step}/6 | Muestras: {self.current_step_samples}/{self.samples_per_step}")
         else:
             self.finish_registration()
 
-    def perform_step_capture(self):
-        frame, _ = self.camera.get_frame()
-        if frame is None:
+    def handle_auto_registration(self, frame):
+        """Lógica de captura automática durante el registro."""
+        if not self.is_capturing_auto:
             return
 
-        h, w = frame.shape[:2]
+        # Pequeña pausa entre poses para que el usuario se mueva
+        if hasattr(self, '_last_step_time') and time.time() - self._last_step_time < 3.0:
+            self.instruction_label.configure(text=f"¡Prepárate! Siguiente pose...", text_color="#FFA500")
+            return
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Intentar detectar rostro en la pose actual
+        rects = self.engine.detector.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
         
-        # Modo Manual: Recortar el área del cuadro guía
-        y1, y2 = max(0, h//2-130), min(h, h//2+130)
-        x1, x2 = max(0, w//2-100), min(w, w//2+100)
-        
-        face_roi = gray[y1:y2, x1:x2]
-        face = cv2.resize(face_roi, (100, 100))
-        _, buf = cv2.imencode('.jpg', face)
-        
-        self.captured_samples.append(buf.tobytes())
-        
-        if self.current_step >= 6:
-            self.progress_label.configure(text="Progreso: 6 / 6")
-            self.finish_registration()
-        else:
-            self.current_step += 1
+        # Si no detecta con frontal, intentar con perfil si estamos en esos pasos
+        if len(rects) == 0 and self.current_step > 4:
+            rects = self.engine.profile_detector.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
+
+        if len(rects) > 0:
+            x, y, w, h = rects[0]
+            face = cv2.resize(gray[y:y+h, x:x+w], (100, 100))
+            _, buf = cv2.imencode('.jpg', face)
+            
+            self.captured_samples.append(buf.tobytes())
+            self.current_step_samples += 1
+            
+            # Si completamos las muestras de esta pose, pasamos a la siguiente
+            if self.current_step_samples >= self.samples_per_step:
+                self.current_step += 1
+                self.current_step_samples = 0
+                self._last_step_time = time.time() # Iniciar pausa para el siguiente paso
+                
             self.update_registration_ui()
+        else:
+            # Feedback visual de que no se detecta rostro
+            self.instruction_label.configure(text_color="#FF5555")
 
     def finish_registration(self):
         from app.database import save_identity
@@ -275,7 +291,7 @@ class OmniFaceApp(ctk.CTk):
         save_identity(self.registration_name, self.captured_samples)
         self.engine.retrain()
         
-        messagebox.showinfo("Éxito", f"Usuario '{self.registration_name}' registrado correctamente.")
+        messagebox.showinfo("Éxito", f"Usuario '{self.registration_name}' registrado con {len(self.captured_samples)} muestras.")
         self.show_view("database")
 
     # ── Lógica de Video ──
@@ -290,14 +306,15 @@ class OmniFaceApp(ctk.CTk):
             # Procesar según vista
             if self.current_view == "monitoring" and not self.is_minimized:
                 processed = self.engine.process_frame(frame)
-                
-                # Lógica de Verificación Liveness
-                self.handle_liveness_logic(processed)
-                
+                # La verificación Liveness se elimina por ahora según petición
+                # self.handle_liveness_logic(processed)
                 self.display_frame(processed, self.video_label)
             
             elif self.current_view == "registration":
-                # Dibujar un rectángulo guía en la vista de registro
+                # Lógica de captura automática
+                self.handle_auto_registration(frame)
+                
+                # Dibujar un rectángulo guía
                 h, w = frame.shape[:2]
                 cv2.rectangle(frame, (w//2-100, h//2-130), (w//2+100, h//2+130), (255, 255, 255), 2)
                 self.display_frame(frame, self.video_reg_label)
