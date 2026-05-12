@@ -6,6 +6,7 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'omni
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    # Aumentar timeout para evitar 'database is locked' y permitir multihilo
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=20)
     conn.row_factory = sqlite3.Row
     return conn
@@ -22,6 +23,7 @@ def init_db():
             conn.close()
             
             if 'encodings' in columns:
+                # El esquema antiguo es incompatible con LBPH, mejor recrear si está vacío
                 os.remove(DB_PATH)
         except Exception:
             pass
@@ -62,16 +64,18 @@ def init_db():
 def save_identity(name, face_blobs):
     """Crea identidad y guarda las muestras faciales. Retorna el nuevo id."""
     conn = get_connection()
-    c = conn.cursor()
-    c.execute('INSERT INTO identities (name) VALUES (?)', (name,))
-    identity_id = c.lastrowid
-    c.executemany(
-        'INSERT INTO face_samples (identity_id, face_data) VALUES (?, ?)',
-        [(identity_id, blob) for blob in face_blobs]
-    )
-    conn.commit()
-    conn.close()
-    return identity_id
+    try:
+        c = conn.cursor()
+        c.execute('INSERT INTO identities (name) VALUES (?)', (name,))
+        identity_id = c.lastrowid
+        c.executemany(
+            'INSERT INTO face_samples (identity_id, face_data) VALUES (?, ?)',
+            [(identity_id, blob) for blob in face_blobs]
+        )
+        conn.commit()
+        return identity_id
+    finally:
+        conn.close()
 
 
 def get_all_identities():

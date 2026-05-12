@@ -20,20 +20,24 @@ engine = RecognitionEngine()
 # ── Streaming ────────────────────────────────────────────────────────────────
 
 def _generate_frames():
+    last_frame_id = -1
     while True:
-        frame = camera.get_frame()
-        if frame is None:
-            time.sleep(0.05)
+        frame, frame_id = camera.get_frame()
+        if frame is None or frame_id == last_frame_id:
+            time.sleep(0.01)  # Esperar un poco por un nuevo frame
             continue
 
+        last_frame_id = frame_id
         processed = engine.process_frame(frame)
-        ret, buf   = cv2.imencode('.jpg', processed, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        ret, buf = cv2.imencode('.jpg', processed, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if not ret:
             continue
 
         yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
                + buf.tobytes() + b'\r\n')
-        time.sleep(0.033)
+        
+        # Sincronizar con el framerate deseado (aprox 30 FPS)
+        time.sleep(0.02)
 
 
 @main_bp.route('/video_feed')
@@ -63,7 +67,7 @@ def admin():
 
 @main_bp.route('/capture_frame')
 def capture_frame():
-    frame = camera.get_frame()
+    frame, _ = camera.get_frame()
     if frame is None:
         return jsonify({'error': 'Cámara no disponible'}), 503
     ret, buf = cv2.imencode('.jpg', frame)
