@@ -140,62 +140,39 @@ class RecognitionEngine:
             self._id_map    = id_map
             self._trained   = True
 
-    # ── NMS ───────────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _iou(a, b):
-        """Intersection-over-Union para cajas (x,y,w,h)."""
-        ax1, ay1 = a[0], a[1]
-        ax2, ay2 = a[0] + a[2], a[1] + a[3]
-        bx1, by1 = b[0], b[1]
-        bx2, by2 = b[0] + b[2], b[1] + b[3]
-        ix = max(0, min(ax2, bx2) - max(ax1, bx1))
-        iy = max(0, min(ay2, by2) - max(ay1, by1))
-        inter = ix * iy
-        union = a[2]*a[3] + b[2]*b[3] - inter
-        return inter / union if union > 0 else 0.0
-
-    def _nms(self, detections, iou_thr=0.35):
-        """Elimina detecciones solapadas. Prioriza la caja más grande."""
-        if len(detections) <= 1:
-            return detections
-        # Ordenar por área descendente
-        detections = sorted(detections, key=lambda d: d[1][2] * d[1][3], reverse=True)
-        kept = []
-        for det in detections:
-            if not any(self._iou(det[1], k[1]) > iou_thr for k in kept):
-                kept.append(det)
-        return kept
-
     # ── Detección de TODAS las caras ──────────────────────────────────────────
 
     def _detect_all_faces(self, gray):
         """
-        Corre los tres cascades SIEMPRE (frontal + perfil D + perfil I)
-        y elimina duplicados con NMS.
-        Así detecta caras a 0°, 45° y 90° sin condiciones.
+        Retorna lista de (pose_str, (x,y,w,h)) para TODAS las caras del frame.
+        Frontal primero; si no hay ninguna, busca perfiles.
         """
         results = []
 
-        # 1. Frontal
-        for box in self.detector.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)):
-            results.append(("Frente", tuple(map(int, box))))
+        frontal = self.detector.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)
+        )
+        for box in frontal:
+            results.append(("Frente", tuple(box)))
 
-        # 2. Perfil derecho
-        for box in self.profile_detector.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)):
-            results.append(("Perfil D", tuple(map(int, box))))
+        if not results:
+            # Perfil derecho
+            profiles_r = self.profile_detector.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)
+            )
+            for box in profiles_r:
+                results.append(("Perfil D", tuple(box)))
 
-        # 3. Perfil izquierdo (frame volteado, coordenadas restauradas)
-        flipped = cv2.flip(gray, 1)
-        w_frame = gray.shape[1]
-        for (x, y, w, h) in self.profile_detector.detectMultiScale(
-                flipped, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)):
-            results.append(("Perfil I", (w_frame - x - w, y, w, h)))
+            # Perfil izquierdo (imagen volteada)
+            flipped = cv2.flip(gray, 1)
+            profiles_l = self.profile_detector.detectMultiScale(
+                flipped, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)
+            )
+            for (x, y, w, h) in profiles_l:
+                orig_x = gray.shape[1] - x - w
+                results.append(("Perfil I", (orig_x, y, w, h)))
 
-        # 4. NMS para eliminar solapamientos entre cascades
-        return self._nms(results)
+        return results
 
     # ── Pipeline por frame ────────────────────────────────────────────────────
 
