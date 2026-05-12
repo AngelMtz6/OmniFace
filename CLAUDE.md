@@ -19,9 +19,9 @@
 |------|-----------|---------|
 | Reconocimiento | OpenCV LBPH (`cv2.face.LBPHFaceRecognizer`) | Reemplazó `face_recognition`/dlib, sin dependencias externas |
 | Detección | Haar Cascade (`haarcascade_frontalface_default.xml`) | Incluido en OpenCV, rápido en CPU |
-| Captura | OpenCV `CAP_DSHOW` (backend Windows) | Fix para error MSMF `-1072875772` en laptops |
+| Captura | `VideoCamera` auto-detecta: default → `CAP_DSHOW` → índice 1 | Robusto ante error MSMF `-1072875772` |
 | Storage | SQLite — blobs JPEG 100×100 grises | Sin archivos externos, portátil |
-| Backend web | Flask 3.x + SSE | Streaming MJPEG + alertas en tiempo real |
+| Backend web | Flask 3.x + SSE, `use_reloader=False` | Evita doble instancia de cámara en modo debug |
 | Frontend | HTML/CSS/JS vanilla | Sin frameworks, fácil de editar |
 
 ---
@@ -109,17 +109,24 @@ access_log (
 ## Flujo de datos principal
 
 ```
-VideoCamera (hilo) → frame BGR 640×480
+VideoCamera (hilo daemon)
+  ├── Auto-detecta backend: default → CAP_DSHOW → índice 1
+  ├── Aplica flip horizontal (efecto espejo)
+  └── get_frame() → (frame: ndarray, frame_id: int)
+        ↓
+routes._generate_frames()
+  ├── Descarta frames duplicados via frame_id
+  └── Llama engine.process_frame(frame)
         ↓
 RecognitionEngine.process_frame()
   ├── Haar Cascade → rects de caras
   ├── LBPH.predict() → (label, raw_confidence)
-  ├── _draw() → bounding boxes + texto
+  ├── _draw() → bounding boxes + texto en BGR
   └── _try_log() → access_log + screenshot si desconocido
         ↓
-routes._generate_frames() → MJPEG → <img src="/video_feed">
-        ↓
-AlertManager.update() → SSE /events → overlay rojo en frontend
+MJPEG stream → <img src="/video_feed">
+
+AlertManager.update() → SSE /events → {"alert": bool} → overlay rojo en frontend
 ```
 
 ---
@@ -151,13 +158,15 @@ AlertManager.update() → SSE /events → overlay rojo en frontend
 - [x] Estructura completa del proyecto
 - [x] Motor LBPH funcional (detección + reconocimiento + dibujo)
 - [x] Sistema de enrollamiento vía web
-- [x] Streaming MJPEG en tiempo real
+- [x] Streaming MJPEG en tiempo real con deduplicación por `frame_id`
 - [x] Alertas SSE para desconocidos
 - [x] Panel de administración
-- [x] Fix cámara Windows (CAP_DSHOW)
-- [ ] Cámara aún falla en algunos equipos (investigar `test_cam.py`)
+- [x] `VideoCamera` auto-detecta backend (default / DSHOW / índice 1)
+- [x] Flip horizontal (espejo) en captura
+- [x] `use_reloader=False` en Flask para evitar doble instancia de cámara
 - [ ] Detección de cara parcial (pendiente)
 - [ ] Modo demo con datos pre-cargados
+- [ ] README desactualizado (aún menciona dlib — no se usa)
 
 ---
 
