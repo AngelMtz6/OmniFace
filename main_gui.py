@@ -29,7 +29,8 @@ class OmniFaceApp(ctk.CTk):
         init_db()
         
         # Inicializar componentes
-        self.camera = VideoCamera(video_source=1)
+        self.camera_index = 0
+        self.camera = VideoCamera(video_source=self.camera_index)
         self.engine = RecognitionEngine()
         
         # Variables de estado
@@ -111,6 +112,16 @@ class OmniFaceApp(ctk.CTk):
         
         self.status_text = ctk.CTkLabel(self.status_panel, text="Sistema: Activo", text_color="#50CD64", font=ctk.CTkFont(weight="bold"))
         self.status_text.pack(side="left", padx=20)
+        
+        self.btn_switch_cam = ctk.CTkButton(self.status_panel, text="Cambiar Cámara", width=120, command=self.switch_camera)
+        self.btn_switch_cam.pack(side="right", padx=20)
+
+    def switch_camera(self):
+        self.camera_index = (self.camera_index + 1) % 3  # Probar 0, 1, 2
+        self.camera.release()
+        self.camera._initialized = False  # Resetear para forzar re-init
+        self.camera.__init__(video_source=self.camera_index)
+        messagebox.showinfo("Cámara", f"Cambiando a fuente de video #{self.camera_index}")
 
     def init_database_view(self):
         self.view_database = ctk.CTkFrame(self.main_content, fg_color="transparent")
