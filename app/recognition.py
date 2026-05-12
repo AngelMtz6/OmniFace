@@ -47,6 +47,7 @@ class RecognitionEngine:
         self._id_map:  dict[int, str] = {}
         self._trained  = False
         self._lock     = threading.Lock()
+        self._cascade_lock = threading.Lock()   # CascadeClassifier NO es thread-safe
         self.frame_count   = 0
         self._last_results = []
         self._last_log: dict[str, float] = {}
@@ -84,17 +85,20 @@ class RecognitionEngine:
     def align_face(self, gray_roi):
         """
         Alinea la cara detectando los ojos con Haar cascade.
-        Solo se usa en entrenamiento con ROIs grandes (>=80px).
+        Protegido con lock porque CascadeClassifier no es thread-safe.
+        Solo actua si el ROI tiene >=80px — muy chico no detecta ojos.
         """
         h, w = gray_roi.shape
         if min(h, w) < 80:
-            return gray_roi  # muy chica para detectar ojos
+            return gray_roi
 
         min_eye = max(w // 7, 15)
-        eyes = self.eye_detector.detectMultiScale(
-            gray_roi, scaleFactor=1.1, minNeighbors=4,
-            minSize=(min_eye, min_eye)
-        )
+        with self._cascade_lock:   # ← evita crash con múltiples hilos
+            eyes = self.eye_detector.detectMultiScale(
+                gray_roi, scaleFactor=1.1, minNeighbors=4,
+                minSize=(min_eye, min_eye)
+            )
+
         if len(eyes) < 2:
             return gray_roi
 
@@ -205,21 +209,23 @@ class RecognitionEngine:
         w_frame = gray.shape[1]
 
         def _frontal():
-            return [("Frente", tuple(map(int, b)))
-                    for b in self.detector.detectMultiScale(
-                        gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))]
+            with self._cascade_lock:
+                boxes = self.detector.detectMultiScale(
+                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+            return [("Frente", tuple(map(int, b))) for b in boxes]
 
         def _profile_r():
-            return [("Perfil D", tuple(map(int, b)))
-                    for b in self.profile_detector.detectMultiScale(
-                        gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))]
+            with self._cascade_lock:
+                boxes = self.profile_detector.detectMultiScale(
+                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+            return [("Perfil D", tuple(map(int, b))) for b in boxes]
 
         def _profile_l():
-            results = []
-            for (x, y, w, h) in self.profile_detector.detectMultiScale(
-                    flipped, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50)):
-                results.append(("Perfil I", (w_frame - int(x) - int(w), int(y), int(w), int(h))))
-            return results
+            with self._cascade_lock:
+                boxes = self.profile_detector.detectMultiScale(
+                    flipped, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+            return [("Perfil I", (w_frame - int(x) - int(w), int(y), int(w), int(h)))
+                    for (x, y, w, h) in boxes]
 
         fts = [self._executor.submit(f) for f in (_frontal, _profile_r, _profile_l)]
         detections = []
