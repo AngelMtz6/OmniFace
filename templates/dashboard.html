@@ -140,7 +140,7 @@
                 </td>
                 <td class="small">
                   {% if log.confidence is not none %}
-                    {{ "%.1f%%"|format(log.confidence * 100) }}
+                    {{ "%.1f%%"|format(log.confidence) }}
                   {% else %}—{% endif %}
                 </td>
                 <td class="small text-secondary">{{ log.camera_name or '—' }}</td>

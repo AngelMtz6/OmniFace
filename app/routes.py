@@ -6,7 +6,8 @@ import base64
 
 from .database import (
     get_all_identities, get_identity_by_account, get_access_logs,
-    get_stats, get_identity_full, save_identity_full, get_connection
+    get_stats, get_identity_full, save_identity_full, get_connection,
+    delete_identity
 )
 from .auth import create_account, login as auth_login, request_password_reset
 
@@ -226,12 +227,19 @@ def api_register_face():
             pass
             
     if not face_blobs:
-         return jsonify({"success": False, "error": "Could not decode any frame"}), 400
-         
+        return jsonify({"success": False, "error": "Could not decode any frame"}), 400
+
     conn = get_connection()
-    acc = dict(conn.execute("SELECT * FROM accounts WHERE id = ?", (session["account_id"],)).fetchone())
+    acc = dict(conn.execute(
+        "SELECT * FROM accounts WHERE id = ?", (session["account_id"],)
+    ).fetchone())
     conn.close()
-    
+
+    # Eliminar identidad anterior del mismo account para evitar duplicados
+    prev = get_identity_by_account(session["account_id"])
+    if prev:
+        delete_identity(prev["id"])
+
     save_identity_full(
         nombre=acc['nombre'],
         ap_paterno=acc['ap_paterno'],
@@ -242,6 +250,7 @@ def api_register_face():
         face_blobs=face_blobs,
         account_id=acc['id']
     )
-    
-    flash("Registro facial completado exitosamente. La aplicación de escritorio procesará las muestras la próxima vez que se inicie.", "success")
+
+    flash("Registro facial completado exitosamente. La app de escritorio "
+          "procesará las muestras la próxima vez que se inicie.", "success")
     return jsonify({"success": True})

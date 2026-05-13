@@ -50,6 +50,7 @@ class OmniFaceApp(ctk.CTk):
         
         # Inicializar componentes
         self.camera_index = 0
+        self.camera_label  = f"Cámara {self.camera_index}"  # nombre para log_access
         self.camera = VideoCamera(video_source=self.camera_index)
         self.engine = RecognitionEngine()
         
@@ -69,6 +70,8 @@ class OmniFaceApp(ctk.CTk):
         
         # Estado de Registro
         self.registration_name = ""
+        self.registration_account_id = None   # ID de cuenta seleccionada para registrar
+        self.accounts = []                     # Lista cacheada de cuentas (para finish_registration)
         self.current_step = 0
         self.captured_samples = []
         self.samples_per_step = 10  # 10 × 6 pasos = 60 muestras (ArcFace no necesita más)
@@ -161,6 +164,7 @@ class OmniFaceApp(ctk.CTk):
     def switch_camera(self):
         try:
             self.camera_index = (self.camera_index + 1) % 3  # Probar 0, 1, 2
+            self.camera_label = f"Cámara {self.camera_index}"
             self.camera.release()
             self.camera._initialized = False  # Resetear para forzar re-init
             self.camera.__init__(video_source=self.camera_index)
@@ -512,7 +516,7 @@ class OmniFaceApp(ctk.CTk):
     def _bg_process(self, frame: "np.ndarray"):
         """Corre InsightFace en hilo de fondo para no bloquear la GUI."""
         try:
-            result = self.engine.process_frame(frame)
+            result = self.engine.process_frame(frame, camera_name=self.camera_label)
             self._display_frame = result
         except Exception:
             pass

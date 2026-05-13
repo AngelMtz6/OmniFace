@@ -84,7 +84,7 @@
             </td>
             <td>
               {% if log.confidence is not none %}
-                {% set pct = (log.confidence * 100) | round(1) %}
+                {% set pct = log.confidence | round(1) %}
                 <div class="d-flex align-items-center gap-2">
                   <div style="width:60px;height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;">
                     <div style="width:{{ pct }}%;height:100%;background:{{ '#34d399' if pct >= 70 else '#fbbf24' if pct >= 50 else '#f87171' }};border-radius:3px;"></div>
