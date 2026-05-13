@@ -20,16 +20,32 @@ _profile_path = cv2.data.haarcascades + 'haarcascade_profileface.xml'
 _eye_path     = cv2.data.haarcascades + 'haarcascade_eye_tree_eyeglasses.xml'
 
 # ── Detección de GPU ──────────────────────────────────────────────────────────
+# opencv-contrib-python NO incluye CUDA en PyPI.
+# Usamos onnxruntime-gpu para detectar y usar la GPU correctamente.
 _CUDA_AVAILABLE = False
+_GPU_NAME       = "CPU"
 try:
-    _CUDA_AVAILABLE = cv2.cuda.getCudaEnabledDeviceCount() > 0
-except AttributeError:
+    import onnxruntime as _ort
+    _providers = _ort.get_available_providers()
+    if "CUDAExecutionProvider" in _providers:
+        _CUDA_AVAILABLE = True
+        # Obtener nombre de GPU vía onnxruntime session options si es posible
+        try:
+            import subprocess, re
+            _smi = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                timeout=3
+            ).decode().strip().splitlines()[0]
+            _GPU_NAME = _smi
+        except Exception:
+            _GPU_NAME = "NVIDIA GPU"
+except ImportError:
     pass
 
 _CPU_CORES = os.cpu_count() or 2
 
 if _CUDA_AVAILABLE:
-    print(f"[OmniFace] GPU CUDA disponible — preprocesado acelerado por hardware")
+    print(f"[OmniFace] GPU detectada: {_GPU_NAME} — usando CUDAExecutionProvider (onnxruntime)")
 else:
     print(f"[OmniFace] Sin GPU CUDA — CPU paralelo ({_CPU_CORES} nucleos)")
 
@@ -53,14 +69,10 @@ class RecognitionEngine:
         self._last_log: dict[str, float] = {}
         self.alert_manager = AlertManager()
 
-        # ── Preprocesado: GPU o CPU ───────────────────────────────────────────
-        if _CUDA_AVAILABLE:
-            self._cuda_clahe   = cv2.cuda.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            self._cuda_stream  = cv2.cuda_Stream()
-            self._use_cuda     = True
-        else:
-            self.clahe     = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            self._use_cuda = False
+        # ── Preprocesado CLAHE — siempre CPU (OpenCV sin CUDA en Python 3.14) ──
+        # La GPU se usa vía onnxruntime para inferencia de modelos (InsightFace).
+        self.clahe     = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        self._use_cuda = _CUDA_AVAILABLE   # flag para futuras ops GPU
 
         # ── Pool de hilos: detección + reconocimiento en paralelo ─────────────
         # max_workers = min(6, cores) para no saturar en laptops
@@ -256,20 +268,27 @@ class RecognitionEngine:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         if self.frame_count % PROCESS_EVERY_N == 0:
-            all_faces = self._detect_all_faces(gray)
+            try:
+                all_faces = self._detect_all_faces(gray)
 
-            if all_faces:
-                # Todas las caras detectadas se procesan en paralelo
-                fts = [
-                    self._executor.submit(self._process_single_face, gray, pose, box, frame)
-                    for pose, box in all_faces
-                ]
-                results = [ft.result() for ft in fts]
-            else:
-                results = []
+                if all_faces:
+                    fts = [
+                        self._executor.submit(self._process_single_face, gray, pose, box, frame)
+                        for pose, box in all_faces
+                    ]
+                    results = []
+                    for ft in fts:
+                        try:
+                            results.append(ft.result(timeout=0.5))
+                        except Exception:
+                            pass
+                else:
+                    results = []
 
-            self._last_results = results
-            self.alert_manager.update(results)
+                self._last_results = results
+                self.alert_manager.update(results)
+            except Exception:
+                pass  # nunca romper el loop de video
 
         return self._draw(frame.copy(), self._last_results)
 
