@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %} — Mi perfil{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4" style="max-width:800px;">
+
+  <div class="d-flex align-items-center gap-2 mb-4">
+    <a href="{{ url_for('web.dashboard') }}" class="text-secondary text-decoration-none small">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+    <span class="text-secondary">/</span>
+    <span class="small">Mi perfil</span>
+  </div>
+
+  <!-- Header card -->
+  <div class="card-omni p-4 mb-4">
+    <div class="d-flex align-items-center gap-4 flex-wrap">
+      <div class="avatar-ring" style="width:96px;height:96px;font-size:2.5rem;">
+        <i class="bi bi-person-fill"></i>
+      </div>
+      <div>
+        <h5 class="fw-bold mb-1">{{ account.nombre }} {{ account.ap_paterno }} {{ account.ap_materno }}</h5>
+        <p class="text-secondary small mb-1"><i class="bi bi-envelope me-1"></i>{{ account.correo }}</p>
+        <p class="text-secondary small mb-0">
+          <i class="bi bi-calendar me-1"></i>Miembro desde {{ account.created_at[:10] if account.created_at else '—' }}
+        </p>
+      </div>
+      <div class="ms-auto text-end">
+        <span class="badge px-3 py-2 fs-6
+          {% if account.role == 'admin' %}bg-warning text-dark{% else %}bg-primary{% endif %}">
+          <i class="bi bi-{{ 'shield-fill' if account.role == 'admin' else 'person' }} me-1"></i>
+          {{ account.role | capitalize }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Datos personales -->
+    <div class="col-md-6">
+      <div class="card-omni p-4 h-100">
+        <h6 class="fw-semibold mb-3 text-secondary text-uppercase" style="font-size:.75rem;letter-spacing:.08em;">
+          <i class="bi bi-person me-1"></i>Datos personales
+        </h6>
+        <dl class="mb-0" style="display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem;align-items:start;">
+          <dt class="text-secondary small fw-normal">Nombre(s)</dt>
+          <dd class="small fw-medium mb-0">{{ account.nombre }}</dd>
+
+          <dt class="text-secondary small fw-normal">Ap. paterno</dt>
+          <dd class="small fw-medium mb-0">{{ account.ap_paterno }}</dd>
+
+          <dt class="text-secondary small fw-normal">Ap. materno</dt>
+          <dd class="small fw-medium mb-0">{{ account.ap_materno or '—' }}</dd>
+
+          <dt class="text-secondary small fw-normal">CURP</dt>
+          <dd class="small fw-medium mb-0" style="font-family:monospace;">{{ account.curp }}</dd>
+
+          <dt class="text-secondary small fw-normal">Fecha nac.</dt>
+          <dd class="small fw-medium mb-0">{{ account.fecha_nac }}</dd>
+
+          <dt class="text-secondary small fw-normal">Edad</dt>
+          <dd class="small fw-medium mb-0">{{ age }} años</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- Registro facial -->
+    <div class="col-md-6">
+      <div class="card-omni p-4 h-100">
+        <h6 class="fw-semibold mb-3 text-secondary text-uppercase" style="font-size:.75rem;letter-spacing:.08em;">
+          <i class="bi bi-camera me-1"></i>Registro facial
+        </h6>
+
+        {% if identity %}
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge fs-6 px-3 py-2
+              {% if renewal_due %}badge-unknown{% else %}badge-known{% endif %}">
+              <i class="bi bi-{{ 'x-circle' if renewal_due else 'check-circle' }} me-1"></i>
+              {{ 'Vencido' if renewal_due else 'Activo' }}
+            </span>
+          </div>
+
+          <dl style="display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem;align-items:start;" class="mb-3">
+            <dt class="text-secondary small fw-normal">ID identidad</dt>
+            <dd class="small fw-medium mb-0">#{{ identity.id }}</dd>
+
+            <dt class="text-secondary small fw-normal">Registrado</dt>
+            <dd class="small fw-medium mb-0">{{ identity.created_at[:10] if identity.created_at else '—' }}</dd>
+
+            <dt class="text-secondary small fw-normal">Última renovación</dt>
+            <dd class="small fw-medium mb-0">{{ identity.last_renewal[:10] if identity.last_renewal else '—' }}</dd>
+          </dl>
+
+          {% if renewal_due %}
+          <div class="renewal-banner small">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>Renovación requerida.</strong> Acude a un módulo OmniFace para actualizar tu registro facial.
+          </div>
+          {% endif %}
+
+        {% else %}
+          <div class="text-center py-4 text-secondary">
+            <i class="bi bi-camera-slash fs-2 d-block mb-2 opacity-50"></i>
+            <span class="small">No tienes un registro facial activo.</span>
+            <div class="mt-2 small opacity-75">Acude a un módulo OmniFace para registrar tu biometría.</div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Acceso rápido -->
+  <div class="mt-4 d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('web.my_history') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-clock-history me-1"></i>Ver mi historial
+    </a>
+    <a href="{{ url_for('web.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-grid me-1"></i>Volver al dashboard
+    </a>
+  </div>
+
+</div>
+{% endblock %}

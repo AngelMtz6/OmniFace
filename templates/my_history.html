@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %} — Mi historial{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4" style="max-width:1000px;">
+
+  <div class="d-flex align-items-center gap-2 mb-4">
+    <a href="{{ url_for('web.dashboard') }}" class="text-secondary text-decoration-none small">
+      <i class="bi bi-arrow-left me-1"></i>Dashboard
+    </a>
+    <span class="text-secondary">/</span>
+    <span class="small">Mi historial</span>
+  </div>
+
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h5 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>Historial de detecciones</h5>
+      <p class="text-secondary small mb-0">Últimas {{ logs|length }} detecciones registradas del sistema</p>
+    </div>
+
+    {% if identity %}
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge px-3 py-2 badge-known">
+        <i class="bi bi-person-check me-1"></i>
+        {{ identity.name }}
+      </span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if not identity %}
+  <div class="card-omni p-5 text-center text-secondary">
+    <i class="bi bi-camera-slash fs-2 d-block mb-3 opacity-40"></i>
+    <h6 class="fw-semibold mb-1">Sin registro facial</h6>
+    <p class="small mb-0">No tienes un perfil facial registrado en el sistema.<br>
+       Acude a un módulo OmniFace para registrar tu biometría.</p>
+  </div>
+
+  {% elif logs %}
+  <div class="card-omni">
+    <!-- Summary bar -->
+    <div class="p-3 border-bottom d-flex gap-4 flex-wrap" style="border-color:rgba(255,255,255,.07)!important;">
+      {% set known_count   = logs | selectattr('status','equalto','known')   | list | length %}
+      {% set unknown_count = logs | selectattr('status','equalto','unknown') | list | length %}
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge badge-known">Reconocido</span>
+        <span class="fw-semibold">{{ known_count }}</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge badge-unknown">Desconocido</span>
+        <span class="fw-semibold">{{ unknown_count }}</span>
+      </div>
+      <div class="d-flex align-items-center gap-2 text-secondary small">
+        <i class="bi bi-database"></i>
+        <span>Total: {{ logs|length }}</span>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-omni align-middle mb-0">
+        <thead>
+          <tr>
+            <th style="padding-left:1.25rem;">#</th>
+            <th>Fecha y hora</th>
+            <th>Estado</th>
+            <th>Confianza</th>
+            <th>Cámara</th>
+            <th>Captura</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td class="text-secondary small" style="padding-left:1.25rem;">{{ loop.index }}</td>
+            <td>
+              <div class="small fw-medium">{{ log.timestamp[0:10] }}</div>
+              <div class="text-secondary" style="font-size:.75rem;">{{ log.timestamp[11:19] }}</div>
+            </td>
+            <td>
+              <span class="badge {{ 'badge-known' if log.status == 'known' else 'badge-unknown' }}">
+                <i class="bi bi-{{ 'check-circle' if log.status == 'known' else 'question-circle' }} me-1"></i>
+                {{ 'Reconocido' if log.status == 'known' else 'Desconocido' }}
+              </span>
+            </td>
+            <td>
+              {% if log.confidence is not none %}
+                {% set pct = (log.confidence * 100) | round(1) %}
+                <div class="d-flex align-items-center gap-2">
+                  <div style="width:60px;height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;">
+                    <div style="width:{{ pct }}%;height:100%;background:{{ '#34d399' if pct >= 70 else '#fbbf24' if pct >= 50 else '#f87171' }};border-radius:3px;"></div>
+                  </div>
+                  <span class="small">{{ "%.1f%%"|format(pct) }}</span>
+                </div>
+              {% else %}
+                <span class="text-secondary small">—</span>
+              {% endif %}
+            </td>
+            <td class="small text-secondary">
+              <i class="bi bi-camera me-1 opacity-50"></i>{{ log.camera_name or '—' }}
+            </td>
+            <td>
+              {% if log.screenshot_path %}
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                        style="font-size:.7rem;"
+                        onclick="showScreenshot('{{ log.screenshot_path | replace('\\', '/') }}')">
+                  <i class="bi bi-image"></i>
+                </button>
+              {% else %}
+                <span class="text-secondary small">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="card-omni p-5 text-center text-secondary">
+    <i class="bi bi-inbox fs-2 d-block mb-3 opacity-40"></i>
+    <h6 class="fw-semibold mb-1">Sin detecciones</h6>
+    <p class="small mb-0">Aún no hay detecciones registradas para tu perfil.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Modal screenshot -->
+<div class="modal fade" id="screenshotModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--of-surface);border:1px solid var(--of-border);">
+      <div class="modal-header border-0 pb-0">
+        <h6 class="modal-title fw-semibold">Captura de detección</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center">
+        <img id="screenshotImg" src="" alt="Captura" class="img-fluid rounded" style="max-height:400px;">
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showScreenshot(path) {
+  document.getElementById('screenshotImg').src = '/static/screenshots/' + path.split('/').pop();
+  new bootstrap.Modal(document.getElementById('screenshotModal')).show();
+}
+</script>
+{% endblock %}

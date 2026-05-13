@@ -188,7 +188,7 @@ class RecognitionEngine:
 
     # ── Pipeline por frame ────────────────────────────────────────────────────
 
-    def process_frame(self, frame: np.ndarray) -> np.ndarray:
+    def process_frame(self, frame: np.ndarray, camera_name: str = "") -> np.ndarray:
         self.frame_count += 1
 
         if self.frame_count % PROCESS_EVERY_N == 0:
@@ -201,7 +201,7 @@ class RecognitionEngine:
                     emb  = _normalize(face.embedding)
                     name, conf, iid = self._identify(emb)
                     bbox = face.bbox.astype(int)
-                    self._try_log(name, iid, conf, frame)
+                    self._try_log(name, iid, conf, frame, camera_name)
                     results.append({
                         'name':        name,
                         'confidence':  conf,
@@ -251,13 +251,14 @@ class RecognitionEngine:
 
     # ── Log ───────────────────────────────────────────────────────────────────
 
-    def _try_log(self, name, iid, conf, frame):
+    def _try_log(self, name, iid, conf, frame, camera_name=""):
         now = time.time()
         if now - self._last_log.get(name, 0) < LOG_COOLDOWN:
             return
         self._last_log[name] = now
         screenshot = self.alert_manager.save_screenshot(frame) if name == 'Desconocido' else None
-        log_access(name, 'known' if name != 'Desconocido' else 'unknown', conf, iid, screenshot)
+        log_access(name, 'known' if name != 'Desconocido' else 'unknown',
+                   conf, iid, screenshot, camera_name)
 
     # ── Dibujo ────────────────────────────────────────────────────────────────
 

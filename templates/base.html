@@ -1,43 +1,113 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniFace — {% block title %}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <title>OmniFace{% block title %}{% endblock %}</title>
+
+  <!-- Bootstrap 5.3 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --of-accent: #0d6efd;
+      --of-accent-glow: rgba(13,110,253,.25);
+      --of-bg: #0a0e1a;
+      --of-surface: #111827;
+      --of-surface2: #1c2333;
+      --of-border: rgba(255,255,255,.08);
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--of-bg); color: #e2e8f0; min-height: 100vh; }
+
+    /* Navbar */
+    .navbar-omni { background: var(--of-surface); border-bottom: 1px solid var(--of-border); padding: .75rem 1.5rem; }
+    .navbar-brand-omni { display:flex; align-items:center; gap:.6rem; font-weight:700; font-size:1.1rem; color:#fff; text-decoration:none; }
+    .brand-dot { width:10px; height:10px; background:var(--of-accent); border-radius:50%; box-shadow:0 0 8px var(--of-accent); }
+    .nav-pill { border-radius: 6px; padding: .35rem .85rem; font-size:.875rem; font-weight:500; color: #94a3b8; transition: background .15s, color .15s; text-decoration:none; }
+    .nav-pill:hover, .nav-pill.active { background: rgba(255,255,255,.07); color:#fff; }
+    .nav-pill.active { color: var(--of-accent); }
+
+    /* Cards */
+    .card-omni { background: var(--of-surface); border: 1px solid var(--of-border); border-radius: 12px; }
+
+    /* Stat cards */
+    .stat-card { background: var(--of-surface2); border: 1px solid var(--of-border); border-radius:10px; padding:1.25rem; }
+    .stat-value { font-size:2rem; font-weight:700; line-height:1; }
+    .stat-label { font-size:.8rem; color:#64748b; margin-top:.3rem; }
+
+    /* Badge status */
+    .badge-known   { background: rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.3); }
+    .badge-unknown { background: rgba(239,68,68,.15);  color:#f87171; border:1px solid rgba(239,68,68,.3); }
+
+    /* Table */
+    .table-omni { --bs-table-bg: transparent; --bs-table-border-color: var(--of-border); font-size:.875rem; }
+    .table-omni thead th { color:#64748b; font-weight:500; border-bottom: 1px solid var(--of-border); }
+
+    /* Alert renewal */
+    .renewal-banner { background: rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); border-radius:10px; padding:1rem 1.25rem; color:#fbbf24; }
+
+    /* Form */
+    .form-control, .form-select { background: var(--of-surface2); border: 1px solid var(--of-border); color:#e2e8f0; }
+    .form-control:focus, .form-select:focus { background: var(--of-surface2); border-color: var(--of-accent); color:#e2e8f0; box-shadow: 0 0 0 3px var(--of-accent-glow); }
+    .form-control::placeholder { color:#475569; }
+
+    /* Avatar placeholder */
+    .avatar-ring { width:80px; height:80px; border-radius:50%; background: var(--of-surface2); border:2px solid var(--of-border); display:flex; align-items:center; justify-content:center; font-size:2rem; color:#475569; }
+
+    /* Sidebar */
+    @media (min-width:992px) {
+      .sidebar { width:220px; flex-shrink:0; }
+    }
+  </style>
+  {% block head %}{% endblock %}
 </head>
 <body>
 
-  <nav class="navbar">
-    <div class="nav-brand">
-      <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-        <path d="M12 6a6 6 0 0 1 6 6"/>
-        <path d="M12 18a6 6 0 0 1-6-6"/>
-      </svg>
-      <span class="brand-name">OmniFace</span>
-    </div>
+<!-- Navbar -->
+<nav class="navbar-omni d-flex align-items-center justify-content-between sticky-top">
+  <a href="{{ url_for('web.dashboard') if session.get('account_id') else url_for('web.login_page') }}" class="navbar-brand-omni">
+    <span class="brand-dot"></span>OmniFace
+  </a>
 
-    <div class="nav-links">
-      <a href="/"         class="nav-link {% if request.endpoint == 'main.index'    %}active{% endif %}">Monitor</a>
-      <a href="/register" class="nav-link {% if request.endpoint == 'main.register' %}active{% endif %}">Registrar</a>
-      <a href="/admin"    class="nav-link {% if request.endpoint == 'main.admin'    %}active{% endif %}">Panel</a>
-    </div>
+  {% if session.get('account_id') %}
+  <div class="d-flex align-items-center gap-1">
+    <a href="{{ url_for('web.dashboard') }}"   class="nav-pill {% if request.endpoint=='web.dashboard'   %}active{% endif %}"><i class="bi bi-grid me-1"></i>Inicio</a>
+    <a href="{{ url_for('web.profile') }}"     class="nav-pill {% if request.endpoint=='web.profile'     %}active{% endif %}"><i class="bi bi-person me-1"></i>Perfil</a>
+    <a href="{{ url_for('web.my_history') }}"  class="nav-pill {% if request.endpoint=='web.my_history'  %}active{% endif %}"><i class="bi bi-clock-history me-1"></i>Historial</a>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-secondary small">{{ session.get('name','') }}</span>
+    <a href="{{ url_for('web.logout') }}" class="nav-pill text-danger"><i class="bi bi-box-arrow-right"></i></a>
+  </div>
+  {% else %}
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('web.login_page') }}"    class="nav-pill {% if request.endpoint=='web.login_page'    %}active{% endif %}">Iniciar sesión</a>
+    <a href="{{ url_for('web.register_page') }}" class="nav-pill {% if request.endpoint=='web.register_page' %}active{% endif %}">Registrarse</a>
+  </div>
+  {% endif %}
+</nav>
 
-    <div class="nav-status" id="navAlert">
-      <span class="status-dot ok"></span>
-      <span class="status-label">Sistema Activo</span>
-    </div>
-  </nav>
+<!-- Flash messages -->
+<div class="container-fluid px-4 pt-3">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'success' if cat=='success' else 'warning' if cat=='warning' else 'danger' }} alert-dismissible fade show py-2 small" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+</div>
 
-  <main class="main-content">
-    {% block content %}{% endblock %}
-  </main>
+<main>
+  {% block content %}{% endblock %}
+</main>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
-  {% block scripts %}{% endblock %}
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

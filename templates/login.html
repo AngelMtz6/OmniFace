@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %} — Iniciar sesión{% endblock %}
+
+{% block content %}
+<div class="min-vh-100 d-flex align-items-center justify-content-center" style="padding:2rem 0;">
+  <div style="width:100%;max-width:420px;" class="px-3">
+
+    <div class="text-center mb-4">
+      <div class="mb-3" style="font-size:3rem;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:50%;background:rgba(13,110,253,.15);border:1px solid rgba(13,110,253,.3);">
+          <i class="bi bi-shield-lock" style="color:#60a5fa;font-size:2rem;"></i>
+        </span>
+      </div>
+      <h4 class="fw-bold mb-1">Bienvenido a OmniFace</h4>
+      <p class="text-secondary small">Sistema de reconocimiento facial</p>
+    </div>
+
+    <div class="card-omni p-4">
+      <form method="POST" action="{{ url_for('web.login_page') }}">
+        <div class="mb-3">
+          <label class="form-label small fw-medium">Correo electrónico</label>
+          <div class="input-group">
+            <span class="input-group-text bg-transparent border-end-0" style="border-color:rgba(255,255,255,.08);">
+              <i class="bi bi-envelope text-secondary"></i>
+            </span>
+            <input type="email" name="correo" class="form-control border-start-0"
+                   placeholder="usuario@correo.com" required autofocus
+                   style="border-color:rgba(255,255,255,.08);">
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label small fw-medium mb-0">Contraseña</label>
+            <a href="{{ url_for('web.forgot_password') }}" class="small text-primary text-decoration-none">¿Olvidaste tu contraseña?</a>
+          </div>
+          <div class="input-group">
+            <span class="input-group-text bg-transparent border-end-0" style="border-color:rgba(255,255,255,.08);">
+              <i class="bi bi-lock text-secondary"></i>
+            </span>
+            <input type="password" name="password" id="pwdField" class="form-control border-start-0 border-end-0"
+                   placeholder="••••••••" required
+                   style="border-color:rgba(255,255,255,.08);">
+            <button type="button" class="input-group-text bg-transparent"
+                    style="border-color:rgba(255,255,255,.08);"
+                    onclick="togglePwd()">
+              <i class="bi bi-eye text-secondary" id="eyeIcon"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 fw-semibold">
+          <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar sesión
+        </button>
+      </form>
+    </div>
+
+    <p class="text-center text-secondary small mt-3">
+      ¿No tienes cuenta?
+      <a href="{{ url_for('web.register_page') }}" class="text-primary text-decoration-none fw-medium">Regístrate aquí</a>
+    </p>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePwd() {
+  const f = document.getElementById('pwdField');
+  const i = document.getElementById('eyeIcon');
+  f.type = f.type === 'password' ? 'text' : 'password';
+  i.className = f.type === 'password' ? 'bi bi-eye text-secondary' : 'bi bi-eye-slash text-secondary';
+}
+</script>
+{% endblock %}

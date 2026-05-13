@@ -1,102 +1,104 @@
 {% extends "base.html" %}
-{% block title %}Registrar Identidad{% endblock %}
+{% block title %} — Crear cuenta{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1>Registrar Identidad</h1>
-  <p class="subtitle">El sistema capturará tu rostro desde varios ángulos automáticamente</p>
-</div>
+<div class="d-flex align-items-start justify-content-center" style="padding:2rem 0 3rem;">
+  <div style="width:100%;max-width:560px;" class="px-3">
 
-<div class="enroll-layout">
-
-  <!-- ── Columna izquierda: cámara ── -->
-  <div class="enroll-camera-col">
-
-    <!-- Nombre -->
-    <div class="form-group" id="nameSection">
-      <label class="form-label" for="personName">Nombre completo</label>
-      <div class="name-row">
-        <input type="text" id="personName" class="input-field" placeholder="Ej. María García">
-        <button class="btn btn-primary" id="startBtn" onclick="startEnrollment()">Iniciar</button>
-      </div>
+    <div class="text-center mb-4">
+      <h4 class="fw-bold mb-1">Crear cuenta</h4>
+      <p class="text-secondary small">Completa tus datos personales para registrarte</p>
     </div>
 
-    <!-- Video con overlay de estado -->
-    <div class="cam-wrapper" id="camWrapper">
-      <img src="/video_feed" id="liveView" class="live-view" alt="Cámara">
+    {% if error %}
+    <div class="alert alert-danger py-2 small mb-3">
+      <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+    </div>
+    {% endif %}
 
-      <!-- Overlay de instrucción (visible durante captura) -->
-      <div class="cam-overlay" id="camOverlay" style="display:none;">
-        <div class="step-bubble" id="stepBubble">
-          <span class="step-icon" id="stepIcon">😐</span>
-          <span class="step-text" id="stepText">Mira directamente a la cámara</span>
+    <div class="card-omni p-4">
+      <form method="POST" action="{{ url_for('web.register_page') }}" novalidate>
+
+        <p class="small fw-semibold text-secondary text-uppercase mb-3" style="letter-spacing:.05em;">
+          <i class="bi bi-person me-1"></i>Datos personales
+        </p>
+
+        <div class="row g-3 mb-3">
+          <div class="col-12">
+            <label class="form-label small fw-medium">Nombre(s) <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control"
+                   placeholder="Ej. Juan Carlos" required
+                   value="{{ request.form.get('nombre','') }}">
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label small fw-medium">Apellido paterno <span class="text-danger">*</span></label>
+            <input type="text" name="ap_paterno" class="form-control"
+                   placeholder="Ej. García" required
+                   value="{{ request.form.get('ap_paterno','') }}">
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label small fw-medium">Apellido materno</label>
+            <input type="text" name="ap_materno" class="form-control"
+                   placeholder="Ej. López (opcional)"
+                   value="{{ request.form.get('ap_materno','') }}">
+          </div>
         </div>
-        <!-- Indicador de cara detectada -->
-        <div class="face-indicator" id="faceIndicator">
-          <span class="face-dot" id="faceDot"></span>
-          <span id="faceLabel">Buscando rostro…</span>
+
+        <div class="row g-3 mb-4">
+          <div class="col-sm-7">
+            <label class="form-label small fw-medium">CURP <span class="text-danger">*</span></label>
+            <input type="text" name="curp" class="form-control text-uppercase"
+                   placeholder="18 caracteres" maxlength="18" minlength="18" required
+                   style="font-family:monospace;letter-spacing:.08em;"
+                   value="{{ request.form.get('curp','') }}"
+                   oninput="this.value=this.value.toUpperCase()">
+            <div class="form-text text-secondary" style="font-size:.75rem;">Exactamente 18 caracteres</div>
+          </div>
+          <div class="col-sm-5">
+            <label class="form-label small fw-medium">Fecha de nacimiento <span class="text-danger">*</span></label>
+            <input type="date" name="fecha_nac" class="form-control" required
+                   value="{{ request.form.get('fecha_nac','') }}">
+          </div>
         </div>
-        <!-- Countdown circular -->
-        <div class="countdown-wrap" id="countdownWrap" style="display:none;">
-          <svg class="countdown-ring" viewBox="0 0 60 60">
-            <circle class="ring-bg" cx="30" cy="30" r="26"/>
-            <circle class="ring-fg" id="ringFg" cx="30" cy="30" r="26"
-                    stroke-dasharray="163.36" stroke-dashoffset="163.36"/>
-          </svg>
-          <span class="countdown-num" id="countdownNum">2</span>
+
+        <hr style="border-color:rgba(255,255,255,.07);" class="my-3">
+        <p class="small fw-semibold text-secondary text-uppercase mb-3" style="letter-spacing:.05em;">
+          <i class="bi bi-shield-lock me-1"></i>Acceso a la cuenta
+        </p>
+
+        <div class="mb-3">
+          <label class="form-label small fw-medium">Correo electrónico <span class="text-danger">*</span></label>
+          <input type="email" name="correo" class="form-control"
+                 placeholder="usuario@correo.com" required
+                 value="{{ request.form.get('correo','') }}">
         </div>
-      </div>
 
-      <!-- Marco verde/rojo según detección -->
-      <div class="cam-border" id="camBorder"></div>
+        <div class="row g-3 mb-4">
+          <div class="col-sm-6">
+            <label class="form-label small fw-medium">Contraseña <span class="text-danger">*</span></label>
+            <input type="password" name="password" id="pwd1" class="form-control"
+                   placeholder="Mínimo 6 caracteres" required minlength="6">
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label small fw-medium">Confirmar contraseña <span class="text-danger">*</span></label>
+            <input type="password" name="password2" id="pwd2" class="form-control"
+                   placeholder="Repite la contraseña" required minlength="6">
+          </div>
+        </div>
+
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary fw-semibold">
+            <i class="bi bi-person-check me-2"></i>Crear cuenta
+          </button>
+        </div>
+
+      </form>
     </div>
 
-    <!-- Progreso de pasos -->
-    <div class="steps-bar" id="stepsBar" style="display:none;">
-      <div class="steps-track" id="stepsTrack"></div>
-      <div class="steps-info">
-        <span id="stepsLabel">Paso 1 de 6</span>
-        <span id="capturesLabel">0 capturas</span>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ── Columna derecha: miniaturas + resumen ── -->
-  <div class="enroll-right-col">
-
-    <div class="enroll-info-card" id="infoCard">
-      <h3>¿Cómo funciona?</h3>
-      <ol class="how-list">
-        <li>Escribe tu nombre y presiona <strong>Iniciar</strong></li>
-        <li>El sistema te guiará en <strong>6 posturas</strong></li>
-        <li>Cuando detecte tu cara, capturará <strong>automáticamente</strong></li>
-        <li>Al terminar tendrás <strong>~15 muestras</strong> desde distintos ángulos</li>
-        <li>Esto genera un modelo LBPH más robusto y preciso</li>
-      </ol>
-    </div>
-
-    <div class="enroll-steps-preview" id="stepsPreview" style="display:none;">
-      <div id="stepsGrid" class="steps-grid"></div>
-    </div>
-
-    <div class="thumbnails-section">
-      <div class="thumb-header">
-        <span>Capturas</span>
-        <span id="thumbCount" class="badge">0</span>
-      </div>
-      <div id="thumbnailRow" class="thumbnail-row"></div>
-    </div>
-
-    <div id="enrollStatus" class="enroll-status"></div>
-
-    <button id="enrollBtn" class="btn btn-success btn-full" style="display:none;" onclick="submitEnrollment()">
-      ✓ Guardar Identidad (<span id="finalCount">0</span> muestras)
-    </button>
-
-    <button id="retryBtn" class="btn btn-sm" style="display:none; margin-top:.5rem;" onclick="resetEnrollment()">
-      Volver a intentar
-    </button>
+    <p class="text-center text-secondary small mt-3">
+      ¿Ya tienes cuenta?
+      <a href="{{ url_for('web.login_page') }}" class="text-primary text-decoration-none fw-medium">Inicia sesión</a>
+    </p>
 
   </div>
 </div>
@@ -104,285 +106,14 @@
 
 {% block scripts %}
 <script>
-// ── Configuración de pasos ──────────────────────────────────────────────────
-const STEPS = [
-  { label: 'Mira directamente a la cámara',   icon: '😐', captures: 3 },
-  { label: 'Gira lentamente a tu izquierda',  icon: '⬅️', captures: 3 },
-  { label: 'Gira lentamente a tu derecha',    icon: '➡️', captures: 3 },
-  { label: 'Inclina la cabeza hacia arriba',  icon: '⬆️', captures: 2 },
-  { label: 'Inclina la cabeza hacia abajo',   icon: '⬇️', captures: 2 },
-  { label: 'Expresión natural / sonríe',      icon: '😊', captures: 2 },
-];
-const COUNTDOWN_MS  = 1800;   // ms antes de capturar al detectar cara
-const BURST_DELAY   = 350;    // ms entre capturas en ráfaga
-const POLL_INTERVAL = 400;    // ms entre chequeos de detección
-
-// ── Estado ─────────────────────────────────────────────────────────────────
-let allFrames       = [];
-let currentStep     = 0;
-let capturesInStep  = 0;
-let enrollActive    = false;
-let countingDown    = false;
-let pollTimer       = null;
-let countdownTimer  = null;
-
-// ── Arranque ────────────────────────────────────────────────────────────────
-function startEnrollment() {
-  const name = document.getElementById('personName').value.trim();
-  if (!name) { showStatus('Escribe un nombre primero', 'error'); return; }
-
-  allFrames      = [];
-  currentStep    = 0;
-  capturesInStep = 0;
-  enrollActive   = true;
-
-  document.getElementById('startBtn').disabled = true;
-  document.getElementById('personName').disabled = true;
-  document.getElementById('camOverlay').style.display = 'flex';
-  document.getElementById('stepsBar').style.display   = 'block';
-  document.getElementById('stepsPreview').style.display = 'block';
-  document.getElementById('infoCard').style.display   = 'none';
-  document.getElementById('enrollBtn').style.display  = 'none';
-
-  renderStepsGrid();
-  goToStep(0);
-  pollTimer = setInterval(pollFace, POLL_INTERVAL);
-}
-
-// ── Paso actual ─────────────────────────────────────────────────────────────
-function goToStep(idx) {
-  currentStep    = idx;
-  capturesInStep = 0;
-  countingDown   = false;
-  clearTimeout(countdownTimer);
-  hideCountdown();
-
-  const step = STEPS[idx];
-  document.getElementById('stepIcon').textContent = step.icon;
-  document.getElementById('stepText').textContent = step.label;
-  document.getElementById('stepsLabel').textContent =
-    `Paso ${idx + 1} de ${STEPS.length}`;
-  updateStepsBar();
-  updateStepsGrid();
-}
-
-// ── Polling de detección ─────────────────────────────────────────────────────
-async function pollFace() {
-  if (!enrollActive) return;
-  try {
-    const res  = await fetch('/face_status');
-    const data = await res.json();
-    updateFaceIndicator(data.face_detected);
-
-    if (data.face_detected && !countingDown) {
-      startCountdown();
-    } else if (!data.face_detected && countingDown) {
-      cancelCountdown();
-    }
-  } catch (_) {}
-}
-
-function updateFaceIndicator(detected) {
-  const dot   = document.getElementById('faceDot');
-  const label = document.getElementById('faceLabel');
-  const border = document.getElementById('camBorder');
-  if (detected) {
-    dot.className   = 'face-dot detected';
-    label.textContent = '¡Rostro detectado!';
-    border.className  = 'cam-border detected';
-  } else {
-    dot.className   = 'face-dot';
-    label.textContent = 'Buscando rostro…';
-    border.className  = 'cam-border';
+document.querySelector('form').addEventListener('submit', function(e) {
+  const p1 = document.getElementById('pwd1').value;
+  const p2 = document.getElementById('pwd2').value;
+  if (p1 !== p2) {
+    e.preventDefault();
+    alert('Las contraseñas no coinciden.');
+    document.getElementById('pwd2').focus();
   }
-}
-
-// ── Countdown + captura ──────────────────────────────────────────────────────
-function startCountdown() {
-  countingDown = true;
-  const wrap = document.getElementById('countdownWrap');
-  const ring = document.getElementById('ringFg');
-  const num  = document.getElementById('countdownNum');
-  const circumference = 163.36;
-
-  wrap.style.display = 'flex';
-  num.textContent    = Math.ceil(COUNTDOWN_MS / 1000);
-
-  const start   = performance.now();
-  let animFrame;
-
-  function tick(now) {
-    const elapsed  = now - start;
-    const progress = Math.min(elapsed / COUNTDOWN_MS, 1);
-    const offset   = circumference * (1 - progress);
-    ring.style.strokeDashoffset = offset;
-    num.textContent = Math.max(1, Math.ceil((1 - progress) * (COUNTDOWN_MS / 1000)));
-
-    if (progress < 1) {
-      animFrame = requestAnimationFrame(tick);
-    } else {
-      hideCountdown();
-      burstCapture();
-    }
-  }
-  animFrame = requestAnimationFrame(tick);
-
-  // Guardar referencia para cancelar
-  countdownTimer = () => cancelAnimationFrame(animFrame);
-}
-
-function cancelCountdown() {
-  if (typeof countdownTimer === 'function') countdownTimer();
-  countingDown = false;
-  hideCountdown();
-}
-
-function hideCountdown() {
-  document.getElementById('countdownWrap').style.display = 'none';
-  document.getElementById('ringFg').style.strokeDashoffset = '163.36';
-}
-
-// ── Ráfaga de capturas ───────────────────────────────────────────────────────
-async function burstCapture() {
-  const needed = STEPS[currentStep].captures;
-
-  for (let i = 0; i < needed; i++) {
-    if (!enrollActive) return;
-    const res  = await fetch('/capture_frame');
-    const data = await res.json();
-    if (data.image) {
-      allFrames.push(data.image);
-      capturesInStep++;
-      addThumbnail(data.image, currentStep);
-      document.getElementById('thumbCount').textContent  = allFrames.length;
-      document.getElementById('finalCount').textContent  = allFrames.length;
-      document.getElementById('capturesLabel').textContent =
-        `${allFrames.length} capturas`;
-    }
-    await sleep(BURST_DELAY);
-  }
-
-  markStepDone(currentStep);
-
-  if (currentStep + 1 < STEPS.length) {
-    await sleep(500);
-    countingDown = false;
-    goToStep(currentStep + 1);
-  } else {
-    finishCapture();
-  }
-}
-
-// ── Fin de captura ────────────────────────────────────────────────────────────
-function finishCapture() {
-  enrollActive = false;
-  clearInterval(pollTimer);
-  document.getElementById('camOverlay').style.display = 'none';
-  document.getElementById('camBorder').className      = 'cam-border done';
-  document.getElementById('enrollBtn').style.display  = 'block';
-  document.getElementById('retryBtn').style.display   = 'inline-flex';
-  showStatus(`✓ ${allFrames.length} muestras capturadas desde ${STEPS.length} ángulos. Listo para guardar.`, 'success');
-}
-
-// ── Enviar al servidor ────────────────────────────────────────────────────────
-async function submitEnrollment() {
-  const name = document.getElementById('personName').value.trim();
-  if (!name || allFrames.length === 0) return;
-
-  const btn = document.getElementById('enrollBtn');
-  btn.disabled    = true;
-  btn.textContent = 'Guardando…';
-
-  const res  = await fetch('/enroll', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ name, frames: allFrames }),
-  });
-  const data = await res.json();
-
-  if (data.success) {
-    showStatus(`✓ ${data.name} registrado con ${data.samples} muestras faciales`, 'success');
-    setTimeout(resetEnrollment, 2000);
-  } else {
-    showStatus(`✗ ${data.error}`, 'error');
-    btn.disabled    = false;
-    btn.textContent = `✓ Guardar Identidad (${allFrames.length} muestras)`;
-  }
-}
-
-// ── Reset completo ────────────────────────────────────────────────────────────
-function resetEnrollment() {
-  allFrames      = [];
-  currentStep    = 0;
-  capturesInStep = 0;
-  enrollActive   = false;
-  countingDown   = false;
-  clearInterval(pollTimer);
-
-  document.getElementById('personName').value    = '';
-  document.getElementById('personName').disabled = false;
-  document.getElementById('startBtn').disabled   = false;
-  document.getElementById('camOverlay').style.display    = 'none';
-  document.getElementById('stepsBar').style.display      = 'none';
-  document.getElementById('stepsPreview').style.display  = 'none';
-  document.getElementById('infoCard').style.display      = 'block';
-  document.getElementById('enrollBtn').style.display     = 'none';
-  document.getElementById('retryBtn').style.display      = 'none';
-  document.getElementById('camBorder').className         = 'cam-border';
-  document.getElementById('thumbnailRow').innerHTML      = '';
-  document.getElementById('thumbCount').textContent      = '0';
-  document.getElementById('finalCount').textContent      = '0';
-  document.getElementById('enrollStatus').className      = 'enroll-status';
-  document.getElementById('enrollStatus').textContent    = '';
-  hideCountdown();
-}
-
-// ── UI helpers ────────────────────────────────────────────────────────────────
-function renderStepsGrid() {
-  document.getElementById('stepsGrid').innerHTML = STEPS.map((s, i) => `
-    <div class="step-pill" id="pill-${i}">
-      <span class="pill-icon">${s.icon}</span>
-      <span class="pill-label">${s.label}</span>
-      <span class="pill-status" id="pill-status-${i}">—</span>
-    </div>
-  `).join('');
-}
-
-function updateStepsGrid() {
-  STEPS.forEach((_, i) => {
-    const pill = document.getElementById(`pill-${i}`);
-    if (!pill) return;
-    pill.classList.remove('active', 'done');
-    if (i === currentStep) pill.classList.add('active');
-  });
-}
-
-function markStepDone(idx) {
-  const pill = document.getElementById(`pill-${idx}`);
-  if (pill) { pill.classList.remove('active'); pill.classList.add('done'); }
-  const status = document.getElementById(`pill-status-${idx}`);
-  if (status) status.textContent = `${STEPS[idx].captures} ✓`;
-}
-
-function updateStepsBar() {
-  const pct = (currentStep / STEPS.length) * 100;
-  document.getElementById('stepsTrack').style.width = pct + '%';
-}
-
-function addThumbnail(src, stepIdx) {
-  const img = document.createElement('img');
-  img.src = src;
-  img.className = 'thumbnail';
-  img.title = STEPS[stepIdx].label;
-  document.getElementById('thumbnailRow').appendChild(img);
-}
-
-function showStatus(msg, type) {
-  const el = document.getElementById('enrollStatus');
-  el.textContent = msg;
-  el.className   = 'enroll-status ' + type;
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+});
 </script>
 {% endblock %}

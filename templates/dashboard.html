@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %} — Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4" style="max-width:1100px;">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h5 class="fw-bold mb-0">Bienvenido, {{ account.nombre }} {{ account.ap_paterno }}</h5>
+      <p class="text-secondary small mb-0">{{ account.correo }}</p>
+    </div>
+    {% if renewal_due %}
+    <a href="{{ url_for('web.profile') }}" class="btn btn-sm btn-warning fw-semibold">
+      <i class="bi bi-arrow-repeat me-1"></i>Renovar registro facial
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Renewal banner -->
+  {% if renewal_due %}
+  <div class="renewal-banner mb-4 d-flex align-items-center gap-3">
+    <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+    <div>
+      <strong>Renovación requerida</strong>
+      <div class="small opacity-75">Tu registro facial {% if not identity %}aún no existe{% else %}tiene más de 365 días{% endif %}.
+        Acude a un módulo OmniFace para actualizar tus datos biométricos.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Stats row -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-value text-primary">{{ stats.total_identities }}</div>
+        <div class="stat-label"><i class="bi bi-people me-1"></i>Identidades</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-value text-info">{{ stats.total_accesses }}</div>
+        <div class="stat-label"><i class="bi bi-activity me-1"></i>Total accesos</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-value text-success">{{ stats.known_today }}</div>
+        <div class="stat-label"><i class="bi bi-check-circle me-1"></i>Conocidos hoy</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card">
+        <div class="stat-value text-danger">{{ stats.unknown_today }}</div>
+        <div class="stat-label"><i class="bi bi-question-circle me-1"></i>Desconocidos hoy</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- Mi perfil card -->
+    <div class="col-lg-4">
+      <div class="card-omni p-4 h-100">
+        <h6 class="fw-semibold mb-3"><i class="bi bi-person-badge me-2 text-primary"></i>Mi identificación</h6>
+
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <div class="avatar-ring">
+            <i class="bi bi-person-fill"></i>
+          </div>
+          <div>
+            <div class="fw-semibold">{{ account.nombre }} {{ account.ap_paterno }} {{ account.ap_materno }}</div>
+            <div class="text-secondary small">Edad: {{ age }} años</div>
+          </div>
+        </div>
+
+        <div class="list-group list-group-flush">
+          <div class="list-group-item px-0 py-2 d-flex justify-content-between" style="background:transparent;border-color:rgba(255,255,255,.06);">
+            <span class="text-secondary small">CURP</span>
+            <span class="small fw-medium" style="font-family:monospace;">{{ account.curp }}</span>
+          </div>
+          <div class="list-group-item px-0 py-2 d-flex justify-content-between" style="background:transparent;border-color:rgba(255,255,255,.06);">
+            <span class="text-secondary small">Fecha nac.</span>
+            <span class="small fw-medium">{{ account.fecha_nac }}</span>
+          </div>
+          <div class="list-group-item px-0 py-2 d-flex justify-content-between" style="background:transparent;border-color:rgba(255,255,255,.06);">
+            <span class="text-secondary small">Registro facial</span>
+            {% if identity %}
+              {% if renewal_due %}
+                <span class="badge badge-unknown">Vencido</span>
+              {% else %}
+                <span class="badge badge-known">Activo</span>
+              {% endif %}
+            {% else %}
+              <span class="badge" style="background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.3);">Sin registro</span>
+            {% endif %}
+          </div>
+          {% if identity and identity.last_renewal %}
+          <div class="list-group-item px-0 py-2 d-flex justify-content-between" style="background:transparent;border-color:rgba(255,255,255,.06);">
+            <span class="text-secondary small">Última renovación</span>
+            <span class="small fw-medium">{{ identity.last_renewal[:10] }}</span>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="mt-3">
+          <a href="{{ url_for('web.profile') }}" class="btn btn-sm btn-outline-secondary w-100">
+            <i class="bi bi-pencil me-1"></i>Ver perfil completo
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Últimos accesos -->
+    <div class="col-lg-8">
+      <div class="card-omni p-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h6 class="fw-semibold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>Mis últimas detecciones</h6>
+          <a href="{{ url_for('web.my_history') }}" class="small text-primary text-decoration-none">Ver todo</a>
+        </div>
+
+        {% if logs %}
+        <div class="table-responsive">
+          <table class="table table-omni align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Fecha / Hora</th>
+                <th>Estado</th>
+                <th>Confianza</th>
+                <th>Cámara</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in logs %}
+              <tr>
+                <td class="small text-secondary">{{ log.timestamp[:16].replace('T',' ') }}</td>
+                <td>
+                  <span class="badge {{ 'badge-known' if log.status == 'known' else 'badge-unknown' }}">
+                    {{ 'Reconocido' if log.status == 'known' else 'Desconocido' }}
+                  </span>
+                </td>
+                <td class="small">
+                  {% if log.confidence is not none %}
+                    {{ "%.1f%%"|format(log.confidence * 100) }}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="small text-secondary">{{ log.camera_name or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-secondary">
+          <i class="bi bi-inbox fs-2 d-block mb-2 opacity-50"></i>
+          <span class="small">
+            {% if not identity %}No tienes un registro facial activo aún.{% else %}Sin detecciones registradas.{% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
