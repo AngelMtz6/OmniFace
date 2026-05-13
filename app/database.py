@@ -133,8 +133,72 @@ def init_db():
     conn.commit()
     conn.close()
 
+    # ── Migrar timestamps UTC → hora local (ejecución única) ─────────────────
+    _migrate_utc_timestamps()
+
     # ── Cuenta admin por defecto (primera ejecución) ──────────────────────────
     _ensure_default_admin()
+
+
+def _migrate_utc_timestamps():
+    """
+    Migración única: convierte timestamps UTC → hora local del dispositivo.
+    Detecta si los registros están en UTC comparando el más reciente con
+    la hora local actual. Si difiere más de 1 hora, aplica el offset.
+    No vuelve a ejecutarse si los timestamps ya son locales.
+    """
+    conn = get_connection()
+    try:
+        last = conn.execute(
+            "SELECT MAX(timestamp) FROM access_log"
+        ).fetchone()[0]
+        if not last:
+            return  # Sin registros, nada que migrar
+
+        last_dt    = datetime.strptime(last[:19], "%Y-%m-%d %H:%M:%S")
+        local_now  = datetime.now()
+        diff_secs  = (last_dt - local_now).total_seconds()
+
+        # Si el timestamp más reciente es más de 1 hora en el "futuro" → está en UTC
+        if diff_secs > 3600:
+            utc_offset   = datetime.now().astimezone().utcoffset()
+            offset_hours = int(utc_offset.total_seconds() / 3600)   # ej. -6
+            sign         = "+" if offset_hours >= 0 else "-"
+            abs_h        = abs(offset_hours)
+            modifier     = f"{sign}{abs_h} hours"
+
+            affected = conn.execute(
+                f"UPDATE access_log SET timestamp = datetime(timestamp, ?)",
+                (modifier,)
+            ).rowcount
+            conn.commit()
+            print(f"[OmniFace] Timestamps migrados a hora local "
+                  f"({modifier}): {affected} registros")
+        # else: timestamps ya están en hora local → no hacer nada
+    except Exception as e:
+        print(f"[OmniFace] Error en migración de timestamps: {e}")
+    finally:
+        conn.close()
+
+
+def fmt_local(ts_str: str) -> str:
+    """
+    Formatea un timestamp para mostrar en pantalla.
+    Si por alguna razón llega un timestamp UTC (futuro > 1h), lo convierte
+    automáticamente a hora local. Uso: en templates y en la GUI de escritorio.
+    """
+    if not ts_str:
+        return "—"
+    try:
+        dt        = datetime.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
+        local_now = datetime.now()
+        # Guardia por si el valor es UTC
+        if (dt - local_now).total_seconds() > 3600:
+            utc_offset = datetime.now().astimezone().utcoffset()
+            dt = dt + utc_offset
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ts_str
 
 
 def _ensure_default_admin():

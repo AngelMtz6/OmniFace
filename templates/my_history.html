@@ -73,8 +73,8 @@
           <tr>
             <td class="text-secondary small" style="padding-left:1.25rem;">{{ loop.index }}</td>
             <td>
-              <div class="small fw-medium">{{ log.timestamp[0:10] }}</div>
-              <div class="text-secondary" style="font-size:.75rem;">{{ log.timestamp[11:19] }}</div>
+              <div class="small fw-medium">{{ log.timestamp | localtime | truncate(10, True, '') }}</div>
+              <div class="text-secondary" style="font-size:.75rem;">{{ (log.timestamp | localtime)[11:19] }}</div>
             </td>
             <td>
               <span class="badge {{ 'badge-known' if log.status == 'known' else 'badge-unknown' }}">

@@ -31,7 +31,7 @@ import pystray
 from pystray import MenuItem as item
 from app.camera import VideoCamera
 from app.recognition import RecognitionEngine
-from app.database import init_db, get_all_identities, delete_identity, get_access_logs, get_stats
+from app.database import init_db, get_all_identities, delete_identity, get_access_logs, get_stats, fmt_local
 
 # Configuración estética
 ctk.set_appearance_mode("Dark")
@@ -244,7 +244,7 @@ class OmniFaceApp(ctk.CTk):
             known  = log['status'] == 'known'
             color  = "#1a2e1a" if known else "#2e1a1a"
             tcolor = "#50CD64" if known else "#FF5555"
-            ts     = (log['timestamp'] or "")[:16].replace("T", " ")
+            ts     = fmt_local(log['timestamp'] or "")[:16].replace("T", " ")
             conf   = log['confidence']
             conf_s = f"  {conf:.0f}%" if conf is not None else ""
 
@@ -470,7 +470,7 @@ class OmniFaceApp(ctk.CTk):
             known   = log['status'] == 'known'
             bg      = "#181828" if idx % 2 == 0 else "#141422"
             tcolor  = "#50CD64" if known else "#FF5555"
-            ts      = (log['timestamp'] or "")[:16].replace("T", " ")
+            ts      = fmt_local(log['timestamp'] or "")[:16].replace("T", " ")
             conf    = log['confidence']
             conf_s  = f"{conf:.1f}%" if conf is not None else "—"
             status_s = "Conocido" if known else "Desconocido"
@@ -634,12 +634,8 @@ class OmniFaceApp(ctk.CTk):
             row = ctk.CTkFrame(self.logs_list, fg_color="#232333" if log['status'] == 'known' else "#331a1a")
             row.pack(fill="x", pady=2, padx=5)
             
-            # Formatear timestamp (YYYY-MM-DD HH:MM:SS → DD/MM HH:MM)
-            ts = log['timestamp'] or ""
-            try:
-                ts = ts[:16].replace("T", " ")
-            except Exception:
-                pass
+            # Formatear timestamp con hora local del dispositivo
+            ts = fmt_local(log['timestamp'] or "")[:16].replace("T", " ")
 
             conf_val = log['confidence']
             conf_str = f"{conf_val:.1f}%" if conf_val is not None else "—"

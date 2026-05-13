@@ -52,8 +52,8 @@
     <div class="col-6 col-md-3">
       <div class="stat-card">
         {% if user_stats.ultima %}
-          <div class="stat-value text-warning" style="font-size:1rem;">{{ user_stats.ultima[11:16] }}</div>
-          <div class="stat-label"><i class="bi bi-clock me-1"></i>Última: {{ user_stats.ultima[:10] }}</div>
+          <div class="stat-value text-warning" style="font-size:1rem;">{{ (user_stats.ultima | localtime)[11:16] }}</div>
+          <div class="stat-label"><i class="bi bi-clock me-1"></i>Última: {{ user_stats.ultima | localtime | truncate(10, True, '') }}</div>
         {% else %}
           <div class="stat-value text-secondary" style="font-size:1.2rem;">—</div>
           <div class="stat-label"><i class="bi bi-clock me-1"></i>Sin detecciones</div>
@@ -144,8 +144,8 @@
               {% for log in logs %}
               <tr>
                 <td>
-                  <div class="small fw-medium">{{ log.timestamp[:10] }}</div>
-                  <div class="text-secondary" style="font-size:.72rem;">{{ log.timestamp[11:16] }}</div>
+                  <div class="small fw-medium">{{ log.timestamp | localtime | truncate(10, True, '') }}</div>
+                  <div class="text-secondary" style="font-size:.72rem;">{{ (log.timestamp | localtime)[11:16] }}</div>
                 </td>
                 <td class="small">
                   <i class="bi bi-camera me-1 opacity-50 text-info"></i>
