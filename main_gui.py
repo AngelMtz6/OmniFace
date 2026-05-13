@@ -345,9 +345,11 @@ class OmniFaceApp(ctk.CTk):
 
     def remove_identity(self, identity_id):
         if messagebox.askyesno("Confirmar", "¿Eliminar esta identidad y sus muestras?"):
+            from app.sync import push_db
             delete_identity(identity_id)
             self.refresh_identities()
             threading.Thread(target=self.engine.retrain, daemon=True).start()
+            push_db("identidad eliminada")
 
     # ── Vista de Historial ──
 
