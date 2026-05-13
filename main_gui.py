@@ -29,7 +29,6 @@ import os
 import sys
 import pystray
 from pystray import MenuItem as item
-
 from app.camera import VideoCamera
 from app.recognition import RecognitionEngine
 from app.database import init_db, get_all_identities, delete_identity, get_access_logs, get_stats
@@ -47,6 +46,10 @@ class OmniFaceApp(ctk.CTk):
         
         # Asegurar que la DB esté lista
         init_db()
+
+        # Iniciar push periódico de detecciones cada 10 s
+        from app.sync import start_detection_pusher
+        start_detection_pusher()
         
         # Inicializar componentes
         self.camera_index = 0

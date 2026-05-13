@@ -29,30 +29,35 @@
   </div>
   {% endif %}
 
-  <!-- Stats row -->
+  <!-- Stats row — datos personales del usuario -->
   <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
       <div class="stat-card">
-        <div class="stat-value text-primary">{{ stats.total_identities }}</div>
-        <div class="stat-label"><i class="bi bi-people me-1"></i>Identidades</div>
+        <div class="stat-value text-primary">{{ user_stats.total }}</div>
+        <div class="stat-label"><i class="bi bi-eye me-1"></i>Mis detecciones</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="stat-card">
-        <div class="stat-value text-info">{{ stats.total_accesses }}</div>
-        <div class="stat-label"><i class="bi bi-activity me-1"></i>Total accesos</div>
+        <div class="stat-value text-info">{{ user_stats.lugares }}</div>
+        <div class="stat-label"><i class="bi bi-camera me-1"></i>Lugares visitados</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="stat-card">
-        <div class="stat-value text-success">{{ stats.known_today }}</div>
-        <div class="stat-label"><i class="bi bi-check-circle me-1"></i>Conocidos hoy</div>
+        <div class="stat-value text-success">{{ user_stats.hoy }}</div>
+        <div class="stat-label"><i class="bi bi-calendar-check me-1"></i>Detecciones hoy</div>
       </div>
     </div>
     <div class="col-6 col-md-3">
       <div class="stat-card">
-        <div class="stat-value text-danger">{{ stats.unknown_today }}</div>
-        <div class="stat-label"><i class="bi bi-question-circle me-1"></i>Desconocidos hoy</div>
+        {% if user_stats.ultima %}
+          <div class="stat-value text-warning" style="font-size:1rem;">{{ user_stats.ultima[11:16] }}</div>
+          <div class="stat-label"><i class="bi bi-clock me-1"></i>Última: {{ user_stats.ultima[:10] }}</div>
+        {% else %}
+          <div class="stat-value text-secondary" style="font-size:1.2rem;">—</div>
+          <div class="stat-label"><i class="bi bi-clock me-1"></i>Sin detecciones</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -115,8 +120,14 @@
       <div class="card-omni p-4">
         <div class="d-flex align-items-center justify-content-between mb-3">
           <h6 class="fw-semibold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>Mis últimas detecciones</h6>
-          <a href="{{ url_for('web.my_history') }}" class="small text-primary text-decoration-none">Ver todo</a>
+          {% if logs %}
+          <a href="{{ url_for('web.my_history') }}" class="small text-primary text-decoration-none">Ver historial completo</a>
+          {% endif %}
         </div>
+        <p class="text-secondary small mb-3" style="font-size:.75rem;">
+          <i class="bi bi-info-circle me-1 opacity-50"></i>
+          Se muestra la detección más reciente por cada cámara / lugar.
+        </p>
 
         {% if logs %}
         <div class="table-responsive">
@@ -124,15 +135,22 @@
             <thead>
               <tr>
                 <th>Fecha / Hora</th>
+                <th>Lugar (cámara)</th>
                 <th>Estado</th>
                 <th>Confianza</th>
-                <th>Cámara</th>
               </tr>
             </thead>
             <tbody>
               {% for log in logs %}
               <tr>
-                <td class="small text-secondary">{{ log.timestamp[:16].replace('T',' ') }}</td>
+                <td>
+                  <div class="small fw-medium">{{ log.timestamp[:10] }}</div>
+                  <div class="text-secondary" style="font-size:.72rem;">{{ log.timestamp[11:16] }}</div>
+                </td>
+                <td class="small">
+                  <i class="bi bi-camera me-1 opacity-50 text-info"></i>
+                  {{ log.camera_name or '—' }}
+                </td>
                 <td>
                   <span class="badge {{ 'badge-known' if log.status == 'known' else 'badge-unknown' }}">
                     {{ 'Reconocido' if log.status == 'known' else 'Desconocido' }}
@@ -143,7 +161,6 @@
                     {{ "%.1f%%"|format(log.confidence) }}
                   {% else %}—{% endif %}
                 </td>
-                <td class="small text-secondary">{{ log.camera_name or '—' }}</td>
               </tr>
               {% endfor %}
             </tbody>

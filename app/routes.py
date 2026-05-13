@@ -6,7 +6,8 @@ import base64
 
 from .database import (
     get_all_identities, get_identity_by_account, get_access_logs,
-    get_stats, get_identity_full, save_identity_full, get_connection,
+    get_stats, get_user_stats, get_deduped_logs,
+    get_identity_full, save_identity_full, get_connection,
     delete_identity
 )
 from .auth import create_account, login as auth_login, request_password_reset
@@ -156,12 +157,12 @@ def dashboard():
     renewal_due  = needs_renewal(identity)
     age          = calc_age(account.get("fecha_nac", ""))
 
-    # Últimas detecciones del usuario
-    logs = []
+    # Últimas detecciones deduplicadas por cámara
+    logs       = []
+    user_stats = {"total": 0, "lugares": 0, "hoy": 0, "ultima": None}
     if identity:
-        logs = get_access_logs(limit=10, identity_id=identity["id"])
-
-    stats = get_stats()
+        logs       = get_deduped_logs(identity["id"], limit=10)
+        user_stats = get_user_stats(identity["id"])
 
     return render_template("dashboard.html",
                            account=account,
@@ -169,7 +170,7 @@ def dashboard():
                            renewal_due=renewal_due,
                            age=age,
                            logs=logs,
-                           stats=stats)
+                           user_stats=user_stats)
 
 
 @web_bp.route("/profile")

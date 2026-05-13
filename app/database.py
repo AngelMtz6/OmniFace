@@ -258,6 +258,12 @@ def log_access(identity_name, status, confidence=None,
     """, (identity_id, identity_name, confidence, status, screenshot_path, camera_name))
     conn.commit()
     conn.close()
+    # Notificar al pusher periódico para que incluya esta detección en el próximo push
+    try:
+        from .sync import mark_detection_pending
+        mark_detection_pending()
+    except Exception:
+        pass  # Si sync no está disponible (tests/scripts) no es crítico
 
 
 def get_access_logs(limit=100, identity_id=None) -> list[dict]:
@@ -292,6 +298,57 @@ def get_stats() -> dict:
         "known_today":      known_today,
         "unknown_today":    unk_today,
     }
+
+
+def get_user_stats(identity_id: int) -> dict:
+    """Estadísticas personales del usuario (sus propias detecciones)."""
+    conn = get_connection()
+    total = conn.execute(
+        "SELECT COUNT(*) FROM access_log WHERE identity_id = ?", (identity_id,)
+    ).fetchone()[0]
+    lugares = conn.execute(
+        "SELECT COUNT(DISTINCT camera_name) FROM access_log WHERE identity_id = ?",
+        (identity_id,)
+    ).fetchone()[0]
+    hoy = conn.execute(
+        "SELECT COUNT(*) FROM access_log WHERE identity_id = ? AND DATE(timestamp)=DATE('now')",
+        (identity_id,)
+    ).fetchone()[0]
+    ultima = conn.execute(
+        "SELECT timestamp FROM access_log WHERE identity_id = ? ORDER BY timestamp DESC LIMIT 1",
+        (identity_id,)
+    ).fetchone()
+    conn.close()
+    return {
+        "total":       total,
+        "lugares":     lugares,
+        "hoy":         hoy,
+        "ultima":      ultima[0] if ultima else None,
+    }
+
+
+def get_deduped_logs(identity_id: int, limit: int = 10) -> list[dict]:
+    """
+    Últimas detecciones deduplicadas por cámara:
+    una sola fila por cámara (la más reciente).
+    Ordenadas por ese timestamp más reciente DESC.
+    """
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT a.*
+        FROM access_log a
+        INNER JOIN (
+            SELECT camera_name, MAX(timestamp) AS max_ts
+            FROM access_log
+            WHERE identity_id = ?
+            GROUP BY camera_name
+        ) g ON a.camera_name = g.camera_name AND a.timestamp = g.max_ts
+        WHERE a.identity_id = ?
+        ORDER BY a.timestamp DESC
+        LIMIT ?
+    """, (identity_id, identity_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ── Cámaras ───────────────────────────────────────────────────────────────────
