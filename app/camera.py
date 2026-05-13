@@ -77,7 +77,7 @@ class VideoCamera:
             with self._frame_lock:
                 self._frame = frame
                 self._frame_id += 1
-            time.sleep(0.01)
+            # Sin sleep — la cámara dicta su propio ritmo (30fps nativo)
 
     def get_frame(self):
         with self._frame_lock:

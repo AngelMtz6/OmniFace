@@ -52,7 +52,7 @@ class OmniFaceApp(ctk.CTk):
         self.registration_name = ""
         self.current_step = 0
         self.captured_samples = []
-        self.samples_per_step = 30  # 30 × 6 pasos = 180 muestras totales
+        self.samples_per_step = 10  # 10 × 6 pasos = 60 muestras (ArcFace no necesita más)
         self.current_step_samples = 0
         self.is_capturing_auto = False
         self.registration_steps = [
@@ -103,6 +103,10 @@ class OmniFaceApp(ctk.CTk):
 
         # ── System Tray ──
         self.setup_tray()
+
+        # Estado del procesamiento en fondo (para cámara fluida)
+        self._processing      = False
+        self._display_frame   = None   # último frame ya procesado (con bboxes)
 
         # Iniciar loop de video
         self.update_video()
@@ -210,6 +214,7 @@ class OmniFaceApp(ctk.CTk):
         self.progress_label = ctk.CTkLabel(self.view_registration, text="Paso 0/6  |  Muestras: 0/60",
                                            font=ctk.CTkFont(size=11), text_color="#888888")
         self.progress_label.pack()
+        # total = 10 × 6 = 60
 
     def show_view(self, view_name):
         self.view_monitoring.pack_forget()
@@ -313,40 +318,54 @@ class OmniFaceApp(ctk.CTk):
             self.finish_registration()
 
     def handle_auto_registration(self, frame):
-        """Lógica de captura automática durante el registro."""
+        """
+        Captura automática usando InsightFace (RetinaFace).
+        Guarda crops 112×112 color — compatibles con ArcFace en retrain().
+        """
         if not self.is_capturing_auto:
             return
 
-        # Pequeña pausa entre poses para que el usuario se mueva
+        # Pausa breve entre poses para que el usuario se reubique
         if hasattr(self, '_last_step_time') and time.time() - self._last_step_time < 3.0:
-            self.instruction_label.configure(text=f"¡Prepárate! Siguiente pose...", text_color="#FFA500")
+            self.instruction_label.configure(text="¡Prepárate! Siguiente pose...", text_color="#FFA500")
             return
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Intentar detectar rostro en la pose actual
-        rects = self.engine.detector.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
-        
-        # Si no detecta con frontal, intentar con perfil si estamos en esos pasos
-        if len(rects) == 0 and self.current_step > 4:
-            rects = self.engine.profile_detector.detectMultiScale(gray, 1.1, 5, minSize=(80, 80))
+        # ── Detección con InsightFace (maneja frente + perfil automáticamente) ──
+        try:
+            faces = self.engine._face_app.get(frame)
+        except Exception:
+            faces = []
 
-        if len(rects) > 0:
-            # ── Cara detectada ──
+        if faces:
+            # Cara detectada — tomar la más grande (mayor área de bbox)
+            face = max(faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]))
+
             self.face_detect_label.configure(text="⬤  ¡Rostro detectado! Capturando…",
                                              text_color="#50CD64")
             self.video_reg_frame.configure(border_color="#50CD64")
 
-            x, y, w, h = rects[0]
-            # Alinear + CLAHE + resize 150×150 (mismo pipeline que retrain)
-            face = self.engine._prepare_face(gray[y:y+h, x:x+w])
-            _, buf = cv2.imencode('.jpg', face)
+            # Extraer crop con 30% de padding para que ArcFace tenga contexto
+            fh, fw = frame.shape[:2]
+            bbox = face.bbox.astype(int)
+            x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+            bw, bh = x2 - x1, y2 - y1
+            px, py = int(bw * 0.3), int(bh * 0.3)
+            x1p = max(0, x1 - px);  y1p = max(0, y1 - py)
+            x2p = min(fw, x2 + px); y2p = min(fh, y2 + py)
+
+            crop = frame[y1p:y2p, x1p:x2p]
+            if crop.size == 0:
+                return
+
+            # Guardar como JPEG color 112×112 (formato nuevo ArcFace)
+            crop_112 = cv2.resize(crop, (112, 112))
+            _, buf   = cv2.imencode('.jpg', crop_112, [cv2.IMWRITE_JPEG_QUALITY, 92])
 
             self.captured_samples.append(buf.tobytes())
             self.current_step_samples += 1
 
             if self.current_step_samples >= self.samples_per_step:
-                # Paso completado — marcar burbuja verde y pausar
-                self._update_step_bubbles(self.current_step)   # marca actual como completado visual
+                self._update_step_bubbles(self.current_step)
                 self.current_step += 1
                 self.current_step_samples = 0
                 self._last_step_time = time.time()
@@ -359,7 +378,6 @@ class OmniFaceApp(ctk.CTk):
 
             self.update_registration_ui()
         else:
-            # ── Sin cara ──
             self.face_detect_label.configure(text="⬤  Buscando rostro…", text_color="#FF5555")
             self.video_reg_frame.configure(border_color="#552222")
 
@@ -374,33 +392,59 @@ class OmniFaceApp(ctk.CTk):
 
     # ── Lógica de Video ──
 
+    def _bg_process(self, frame: "np.ndarray"):
+        """Corre InsightFace en hilo de fondo para no bloquear la GUI."""
+        try:
+            result = self.engine.process_frame(frame)
+            self._display_frame = result
+        except Exception:
+            pass
+        finally:
+            self._processing = False
+
     def update_video(self):
-        # Actualizar feed según la vista activa
+        """
+        Loop principal de video — se llama cada 15 ms via self.after().
+        Muestra el último frame procesado inmediatamente (no bloquea),
+        y lanza el procesamiento InsightFace en un hilo de fondo.
+        """
         frame, frame_id = self.camera.get_frame()
-        
+
         if frame is not None and frame_id != self.last_frame_id:
             self.last_frame_id = frame_id
-            
-            # Procesar según vista
+
             if self.current_view == "monitoring" and not self.is_minimized:
-                processed = self.engine.process_frame(frame)
-                # La verificación Liveness se elimina por ahora según petición
-                # self.handle_liveness_logic(processed)
-                self.display_frame(processed, self.video_label)
-            
+                # Mostrar el último frame procesado sin esperar al nuevo
+                if self._display_frame is not None:
+                    self.display_frame(self._display_frame, self.video_label)
+                else:
+                    self.display_frame(frame, self.video_label)
+
+                # Lanzar procesamiento del frame actual si no hay uno en curso
+                if not self._processing:
+                    self._processing = True
+                    threading.Thread(
+                        target=self._bg_process,
+                        args=(frame.copy(),),
+                        daemon=True
+                    ).start()
+
             elif self.current_view == "registration":
-                # Lógica de captura automática
                 self.handle_auto_registration(frame)
-                
-                # Dibujar un rectángulo guía
                 h, w = frame.shape[:2]
                 cv2.rectangle(frame, (w//2-100, h//2-130), (w//2+100, h//2+130), (255, 255, 255), 2)
                 self.display_frame(frame, self.video_reg_label)
-            
-            elif self.is_minimized:
-                self.engine.process_frame(frame)
 
-        self.after(20, self.update_video)
+            elif self.is_minimized:
+                if not self._processing:
+                    self._processing = True
+                    threading.Thread(
+                        target=self._bg_process,
+                        args=(frame.copy(),),
+                        daemon=True
+                    ).start()
+
+        self.after(15, self.update_video)
 
     def handle_liveness_logic(self, frame):
         results = self.engine._last_results
@@ -460,14 +504,12 @@ class OmniFaceApp(ctk.CTk):
                     # Lo dejamos global (20s para todo) según pidió el usuario
 
     def display_frame(self, frame, label_widget):
-        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(rgb_image)
-        
         w, h = label_widget.winfo_width(), label_widget.winfo_height()
         if w > 10 and h > 10:
-            pil_image = pil_image.resize((w, h), Image.Resampling.LANCZOS)
-        
-        tk_image = ImageTk.PhotoImage(image=pil_image)
+            # cv2.resize es ~3× más rápido que PIL LANCZOS para video en vivo
+            frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
+        rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        tk_image  = ImageTk.PhotoImage(image=Image.fromarray(rgb_image))
         label_widget.configure(image=tk_image)
         label_widget.image = tk_image
 
