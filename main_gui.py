@@ -106,6 +106,9 @@ class OmniFaceApp(ctk.CTk):
         self.btn_logs = ctk.CTkButton(self.sidebar, text="Historial", command=lambda: self.show_view("logs"))
         self.btn_logs.pack(pady=10, padx=20)
 
+        self.btn_sync = ctk.CTkButton(self.sidebar, text="Sincronizar Nube", fg_color="#1f538d", hover_color="#14375e", command=self.sync_cloud)
+        self.btn_sync.pack(pady=10, padx=20)
+
         self.btn_exit = ctk.CTkButton(self.sidebar, text="Salir del Sistema", fg_color="#441111", hover_color="#662222", command=self.quit)
         self.btn_exit.pack(side="bottom", pady=(10, 5), padx=20)
 
@@ -253,6 +256,35 @@ class OmniFaceApp(ctk.CTk):
                                            font=ctk.CTkFont(size=11), text_color="#888888")
         self.progress_label.pack()
         # total = 10 × 6 = 60
+
+    def sync_cloud(self):
+        """Descarga cambios de Git (Pull) y refresca el motor de reconocimiento."""
+        def _bg_sync():
+            try:
+                self.btn_sync.configure(state="disabled", text="Sincronizando...")
+                root = os.path.dirname(os.path.abspath(__file__))
+                
+                # Ejecutar pull
+                process = subprocess.run("git pull origin main --rebase", shell=True, cwd=root, capture_output=True, text=True)
+                
+                if process.returncode == 0:
+                    # Forzar re-entrenamiento del motor con los nuevos datos
+                    print("[OmniFace] Sincronización exitosa. Reentrenando motor...")
+                    self.engine.retrain()
+                    
+                    # Refrescar vista si estamos en la base de datos
+                    if self.current_view == "database":
+                        self.refresh_identities()
+                        
+                    messagebox.showinfo("Sincronización", "¡Datos actualizados desde la nube!\n\nEl sistema ya reconoce a los nuevos usuarios registrados.")
+                else:
+                    messagebox.showerror("Error", f"Error al sincronizar:\n{process.stderr}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Error inesperado: {e}")
+            finally:
+                self.btn_sync.configure(state="normal", text="Sincronizar Nube")
+
+        threading.Thread(target=_bg_sync, daemon=True).start()
 
     def show_view(self, view_name):
         self.view_monitoring.pack_forget()

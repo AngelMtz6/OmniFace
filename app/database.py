@@ -18,13 +18,27 @@ def git_sync():
     """Ejecuta un push a Git en segundo plano para sincronizar la DB."""
     def _sync():
         try:
+            # 1. Checkpoint para asegurar que todo el WAL esté en el .db principal
+            conn = get_connection()
+            conn.execute("PRAGMA wal_checkpoint(FULL)")
+            conn.close()
+
             # Directorio raíz del proyecto
             root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            # Usar shell=True en Windows para evitar problemas con ejecutables
-            subprocess.run("git add data/omniface.db screenshots/", shell=True, cwd=root)
-            subprocess.run('git commit -m "Sincronización automática de registros"', shell=True, cwd=root)
-            subprocess.run("git push origin main", shell=True, cwd=root)
-            print("[OmniFace] Sincronización con Git completada.")
+            
+            # 2. Añadir cambios
+            subprocess.run("git add data/ screenshots/", shell=True, cwd=root)
+            
+            # 3. Solo commit si hay algo nuevo
+            res = subprocess.run("git status --porcelain", shell=True, capture_output=True, text=True, cwd=root)
+            if res.stdout.strip():
+                subprocess.run('git commit -m "Sincronización automática de registros"', shell=True, cwd=root)
+                # Intentar pull antes de push para evitar conflictos
+                subprocess.run("git pull origin main --rebase", shell=True, cwd=root)
+                subprocess.run("git push origin main", shell=True, cwd=root)
+                print("[OmniFace] Sincronización con Git completada.")
+            else:
+                print("[OmniFace] Sin cambios locales para sincronizar.")
         except Exception as e:
             print(f"[OmniFace] Error en sincronización Git: {e}")
 
