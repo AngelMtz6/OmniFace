@@ -33,3 +33,5 @@ models/
 .DS_Store
 Thumbs.db
 desktop.ini
+*.whl
+tmp_build/
