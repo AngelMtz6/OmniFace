@@ -1,3 +1,22 @@
+import sys, os, subprocess
+
+# ── Auto-relanzar con el venv si insightface no está disponible ───────────────
+_HERE        = os.path.dirname(os.path.abspath(__file__))
+_VENV_PYTHON = os.path.join(_HERE, '.venv', 'Scripts', 'python.exe')
+
+try:
+    import insightface as _insightface_check  # noqa: F401
+except ImportError:
+    if os.path.exists(_VENV_PYTHON) and os.path.abspath(sys.executable) != os.path.abspath(_VENV_PYTHON):
+        print(f"[OmniFace] Relanzando con venv: {_VENV_PYTHON}")
+        result = subprocess.run([_VENV_PYTHON] + sys.argv)
+        sys.exit(result.returncode)
+    else:
+        print("[OmniFace] ERROR: insightface no instalado en este entorno.")
+        print(f"[OmniFace] Ejecuta: {_VENV_PYTHON} main_gui.py")
+        sys.exit(1)
+# ─────────────────────────────────────────────────────────────────────────────
+
 import tkinter as tk
 from tkinter import messagebox
 # pyrefly: ignore [missing-import]
@@ -252,8 +271,8 @@ class OmniFaceApp(ctk.CTk):
     def remove_identity(self, identity_id):
         if messagebox.askyesno("Confirmar", "¿Eliminar esta identidad y sus muestras?"):
             delete_identity(identity_id)
-            self.engine.retrain()
             self.refresh_identities()
+            threading.Thread(target=self.engine.retrain, daemon=True).start()
 
     # ── Lógica de Registro ──
 
@@ -331,10 +350,7 @@ class OmniFaceApp(ctk.CTk):
             return
 
         # ── Detección con InsightFace (maneja frente + perfil automáticamente) ──
-        try:
-            faces = self.engine._face_app.get(frame)
-        except Exception:
-            faces = []
+        faces = self.engine.detect_faces(frame)
 
         if faces:
             # Cara detectada — tomar la más grande (mayor área de bbox)
@@ -344,12 +360,13 @@ class OmniFaceApp(ctk.CTk):
                                              text_color="#50CD64")
             self.video_reg_frame.configure(border_color="#50CD64")
 
-            # Extraer crop con 30% de padding para que ArcFace tenga contexto
+            # Extraer crop con 50% de padding — RetinaFace necesita contexto
+            # para detectar el rostro durante retrain()
             fh, fw = frame.shape[:2]
             bbox = face.bbox.astype(int)
             x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
             bw, bh = x2 - x1, y2 - y1
-            px, py = int(bw * 0.3), int(bh * 0.3)
+            px, py = int(bw * 0.5), int(bh * 0.5)
             x1p = max(0, x1 - px);  y1p = max(0, y1 - py)
             x2p = min(fw, x2 + px); y2p = min(fh, y2 + py)
 
@@ -357,9 +374,9 @@ class OmniFaceApp(ctk.CTk):
             if crop.size == 0:
                 return
 
-            # Guardar como JPEG color 112×112 (formato nuevo ArcFace)
-            crop_112 = cv2.resize(crop, (112, 112))
-            _, buf   = cv2.imencode('.jpg', crop_112, [cv2.IMWRITE_JPEG_QUALITY, 92])
+            # 224×224 color — retrain() puede detectar el rostro con RetinaFace
+            crop_224 = cv2.resize(crop, (224, 224))
+            _, buf   = cv2.imencode('.jpg', crop_224, [cv2.IMWRITE_JPEG_QUALITY, 92])
 
             self.captured_samples.append(buf.tobytes())
             self.current_step_samples += 1
@@ -383,11 +400,30 @@ class OmniFaceApp(ctk.CTk):
 
     def finish_registration(self):
         from app.database import save_identity
-        
-        save_identity(self.registration_name, self.captured_samples)
-        self.engine.retrain()
-        
-        messagebox.showinfo("Éxito", f"Usuario '{self.registration_name}' registrado con {len(self.captured_samples)} muestras.")
+
+        n_samples = len(self.captured_samples)
+        name      = self.registration_name
+        save_identity(name, self.captured_samples)
+
+        # Retrain en hilo de fondo para no congelar la GUI
+        self.instruction_label.configure(
+            text="⏳ Entrenando modelo… por favor espera", text_color="#FFA500")
+        self.btn_capture.configure(state="disabled")
+        self.is_capturing_auto = False
+
+        def _do_retrain():
+            self.engine.retrain()
+            # Notificar en el hilo principal (after es thread-safe en Tkinter)
+            self.after(0, lambda: self._on_retrain_done(name, n_samples))
+
+        threading.Thread(target=_do_retrain, daemon=True).start()
+
+    def _on_retrain_done(self, name: str, n_samples: int):
+        messagebox.showinfo(
+            "Registro completado",
+            f"✓ '{name}' registrado con {n_samples} muestras.\n"
+            f"El modelo ya está listo para reconocerlo."
+        )
         self.show_view("database")
 
     # ── Lógica de Video ──

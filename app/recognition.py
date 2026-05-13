@@ -3,60 +3,71 @@ import numpy as np
 import time
 import threading
 import os
+import ctypes
 
 from .database import get_all_face_samples, log_access
 from .alerts import AlertManager
 
-# ── Parámetros ────────────────────────────────────────────────────────────────
-COSINE_THRESHOLD = 0.40   # similitud coseno ArcFace para "conocido" (rango típico 0.3-0.5)
-PROCESS_EVERY_N  = 1      # procesar cada frame (InsightFace en GPU lo aguanta)
-LOG_COOLDOWN     = 5      # segundos entre logs del mismo nombre
-
-# ── Detección GPU via onnxruntime ─────────────────────────────────────────────
+# ── Detección real de GPU ─────────────────────────────────────────────────────
+# get_available_providers() solo lista providers compilados, NO verifica DLLs.
+# Probamos cargar cublasLt64_12.dll (CUDA 12 runtime) para confirmarlo.
 _CUDA_AVAILABLE = False
 _GPU_NAME       = "CPU"
+
 try:
     import onnxruntime as _ort
-    _providers = _ort.get_available_providers()
-    if "CUDAExecutionProvider" in _providers:
-        _CUDA_AVAILABLE = True
+    if "CUDAExecutionProvider" in _ort.get_available_providers():
         try:
-            import subprocess
-            _GPU_NAME = subprocess.check_output(
-                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                timeout=3
-            ).decode().strip().splitlines()[0]
-        except Exception:
-            _GPU_NAME = "NVIDIA GPU"
+            ctypes.CDLL("cublas64_12.dll")
+            ctypes.CDLL("cublasLt64_12.dll")
+            _CUDA_AVAILABLE = True
+            try:
+                import subprocess
+                _GPU_NAME = subprocess.check_output(
+                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    timeout=3
+                ).decode().strip().splitlines()[0]
+            except Exception:
+                _GPU_NAME = "NVIDIA GPU"
+        except OSError:
+            print("[OmniFace] CUDA no disponible: falta CUDA 12 runtime (cublasLt64_12.dll)")
+            print("[OmniFace] → Instala CUDA Toolkit 12.x desde developer.nvidia.com/cuda-downloads")
 except ImportError:
     pass
 
 _CPU_CORES = os.cpu_count() or 2
 
+# ── Parámetros adaptativos ────────────────────────────────────────────────────
 if _CUDA_AVAILABLE:
-    print(f"[OmniFace] GPU detectada: {_GPU_NAME} — InsightFace via CUDAExecutionProvider")
+    _MODEL_NAME     = 'buffalo_l'    # ResNet50 — GPU
+    _DET_SIZE       = (640, 480)
+    PROCESS_EVERY_N = 1
+    print(f"[OmniFace] GPU: {_GPU_NAME} — InsightFace buffalo_l @ 640×480")
 else:
-    print(f"[OmniFace] Sin GPU CUDA — InsightFace en CPU ({_CPU_CORES} núcleos)")
+    _MODEL_NAME     = 'buffalo_sc'   # MobileFaceNet — CPU
+    _DET_SIZE       = (256, 192)     # 4:3, ambas dims múltiplo de 32 (stride RetinaFace)
+    PROCESS_EVERY_N = 3              # 1 de cada 3 frames
+    print(f"[OmniFace] CPU ({_CPU_CORES} núcleos) — InsightFace buffalo_sc @ 256×192")
 
+LOG_COOLDOWN     = 5
+COSINE_THRESHOLD = 0.40   # similitud coseno ≥ → "conocido"
 
-# ── Utilidades de embedding ───────────────────────────────────────────────────
+# ── Utilidades ────────────────────────────────────────────────────────────────
 
 def _normalize(v: np.ndarray) -> np.ndarray:
-    n = np.linalg.norm(v)
-    return v / (n + 1e-8)
-
+    return v / (np.linalg.norm(v) + 1e-8)
 
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    """Similitud coseno entre dos vectores ya normalizados."""
     return float(np.dot(a, b))
 
 
 class RecognitionEngine:
     """
-    Motor de reconocimiento facial basado en InsightFace:
-      - Detección:     RetinaFace  (maneja frente + perfil nativamente)
-      - Identificación: ArcFace    (embeddings 512-dim, similitud coseno)
-      - GPU:           onnxruntime CUDAExecutionProvider si disponible
+    Motor de reconocimiento facial — Deep Learning end-to-end:
+      Detección:      RetinaFace  (buffalo_l/sc — maneja todos los ángulos)
+      Identificación: ArcFace     (embeddings coseno, >98% accuracy)
+    IMPORTANTE: retrain() usa _face_app.get() igual que process_frame()
+    para garantizar que los embeddings sean siempre del mismo espacio.
     """
 
     def __init__(self):
@@ -64,32 +75,25 @@ class RecognitionEngine:
 
         providers = (
             ['CUDAExecutionProvider', 'CPUExecutionProvider']
-            if _CUDA_AVAILABLE else
-            ['CPUExecutionProvider']
+            if _CUDA_AVAILABLE else ['CPUExecutionProvider']
         )
 
         self._face_app = FaceAnalysis(
-            name='buffalo_l',
+            name=_MODEL_NAME,
             providers=providers,
             allowed_modules=['detection', 'recognition'],
         )
-        # ctx_id=0 → GPU 0;  ctx_id=-1 → CPU
         self._face_app.prepare(
             ctx_id=0 if _CUDA_AVAILABLE else -1,
-            det_size=(640, 480),
+            det_size=_DET_SIZE,
         )
 
-        # Referencia directa al modelo ArcFace para retrain sin re-detectar
-        self._rec_model = None
-        for m in self._face_app.models.values():
-            if hasattr(m, 'get_feat'):
-                self._rec_model = m
-                break
+        self._known:  dict[int, dict] = {}
+        self._lock    = threading.Lock()
+        self._trained = False
 
-        # Identidades conocidas: {identity_id: {'name': str, 'embedding': np.ndarray}}
-        self._known:   dict[int, dict] = {}
-        self._lock     = threading.Lock()
-        self._trained  = False
+        # Lock de inferencia — evita que retrain y process_frame usen ONNX al mismo tiempo
+        self._infer_lock = threading.Lock()
 
         self.frame_count   = 0
         self._last_results = []
@@ -102,24 +106,22 @@ class RecognitionEngine:
 
     @staticmethod
     def _augment(img: np.ndarray) -> list:
-        """
-        4 variantes por muestra: original + espejo + más brillo + menos brillo.
-        Requerimiento: 'generar automáticamente variaciones de sus fotos'.
-        """
+        """4 variantes: original + espejo + brillo+/- (requerimiento funcional)."""
         return [
             img,
-            cv2.flip(img, 1),                                          # espejo
-            cv2.convertScaleAbs(img, alpha=1.25, beta=35),             # más brillante
-            cv2.convertScaleAbs(img, alpha=0.75, beta=-25),            # más oscuro
+            cv2.flip(img, 1),
+            cv2.convertScaleAbs(img, alpha=1.25, beta=35),
+            cv2.convertScaleAbs(img, alpha=0.75, beta=-25),
         ]
 
     # ── Entrenamiento ─────────────────────────────────────────────────────────
 
     def retrain(self):
         """
-        Carga muestras de la DB, extrae embeddings ArcFace con augmentación
-        y calcula un embedding promedio normalizado por identidad.
-        Solo procesa muestras nuevas (color 112×112) — ignora las antiguas LBPH.
+        Carga muestras de la DB y construye embeddings promediados por identidad.
+        Usa _face_app.get() — MISMO pipeline que process_frame() — para garantizar
+        que retrain e inferencia estén en el mismo espacio de embedding.
+        Ignora automáticamente muestras LBPH antiguas (100×100 grises).
         """
         samples = get_all_face_samples()
         if not samples:
@@ -128,11 +130,7 @@ class RecognitionEngine:
                 self._known   = {}
             return
 
-        if self._rec_model is None:
-            print("[OmniFace] retrain: modelo ArcFace no disponible")
-            return
-
-        grouped: dict[int, dict] = {}   # {id: {'name': str, 'imgs': []}}
+        grouped: dict[int, dict] = {}
 
         for identity_id, name, blob in samples:
             nparr = np.frombuffer(blob, np.uint8)
@@ -141,38 +139,46 @@ class RecognitionEngine:
                 continue
 
             h, w = img.shape[:2]
-            # Muestras antiguas LBPH eran 100×100 grises → ignorar
-            if (h, w) != (112, 112):
+
+            # Descartar muestras antiguas LBPH (100×100 grises)
+            if (h, w) == (100, 100):
                 continue
 
-            if identity_id not in grouped:
-                grouped[identity_id] = {'name': name, 'imgs': []}
-            grouped[identity_id]['imgs'].append(img)
+            # Normalizar tamaño: asegurarse de que hay suficiente contexto para RetinaFace
+            # Muestras nuevas: 224×224. Muestras previas (112×112): agregar padding.
+            if (h, w) == (112, 112):
+                img = cv2.copyMakeBorder(img, 56, 56, 56, 56, cv2.BORDER_REFLECT_101)
+            elif h < 112 or w < 112:
+                continue   # demasiado pequeño
+            # 224×224 o mayor: usar directo
+
+            # Augmentar: 4× GPU, 1× CPU (retrain más rápido en CPU)
+            variants = self._augment(img) if _CUDA_AVAILABLE else [img]
+
+            for variant in variants:
+                with self._infer_lock:
+                    faces = self._face_app.get(variant)
+                if not faces:
+                    continue
+                # Usar face.embedding — idéntico al usado en process_frame
+                emb = _normalize(faces[0].embedding)
+                if identity_id not in grouped:
+                    grouped[identity_id] = {'name': name, 'embs': []}
+                grouped[identity_id]['embs'].append(emb)
 
         if not grouped:
-            print("[OmniFace] retrain: no hay muestras ArcFace — vuelve a registrar las identidades")
+            print("[OmniFace] retrain: sin muestras ArcFace — registra los usuarios de nuevo")
             with self._lock:
                 self._trained = False
                 self._known   = {}
             return
 
         known = {}
-        for identity_id, data in grouped.items():
-            # Augmentar todas las imágenes y apilarlas para inferencia en lote
-            all_variants = []
-            for img in data['imgs']:
-                all_variants.extend(self._augment(img))
-
-            # Inferencia en lote → más rápido en GPU
-            feats = self._rec_model.get_feat(all_variants)   # (N, 512)
-            embs  = np.array([_normalize(f) for f in feats]) # (N, 512)
-
+        for iid, data in grouped.items():
+            embs     = np.array(data['embs'])
             mean_emb = _normalize(embs.mean(axis=0))
-            known[identity_id] = {
-                'name':      data['name'],
-                'embedding': mean_emb,
-            }
-            print(f"[OmniFace] Entrenado: {data['name']} — {len(all_variants)} vectores")
+            known[iid] = {'name': data['name'], 'embedding': mean_emb}
+            print(f"[OmniFace] Entrenado: {data['name']} — {len(embs)} embeddings")
 
         with self._lock:
             self._known   = known
@@ -187,19 +193,20 @@ class RecognitionEngine:
 
         if self.frame_count % PROCESS_EVERY_N == 0:
             try:
-                faces   = self._face_app.get(frame)
+                with self._infer_lock:
+                    faces = self._face_app.get(frame)
+
                 results = []
                 for face in faces:
                     emb  = _normalize(face.embedding)
-                    name, confidence, identity_id = self._identify(emb)
+                    name, conf, iid = self._identify(emb)
                     bbox = face.bbox.astype(int)
-                    x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
-                    self._try_log(name, identity_id, confidence, frame)
+                    self._try_log(name, iid, conf, frame)
                     results.append({
                         'name':        name,
-                        'confidence':  confidence,
-                        'identity_id': identity_id,
-                        'box':         (x1, y1, x2, y2),
+                        'confidence':  conf,
+                        'identity_id': iid,
+                        'box':         (bbox[0], bbox[1], bbox[2], bbox[3]),
                         'known':       name != 'Desconocido',
                     })
 
@@ -211,6 +218,16 @@ class RecognitionEngine:
 
         return self._draw(frame.copy(), self._last_results)
 
+    # ── Detección para registro ───────────────────────────────────────────────
+
+    def detect_faces(self, frame: np.ndarray) -> list:
+        """Detección sin bloquear el hilo principal del registro."""
+        try:
+            with self._infer_lock:
+                return self._face_app.get(frame)
+        except Exception:
+            return []
+
     # ── Identificación ────────────────────────────────────────────────────────
 
     def _identify(self, embedding: np.ndarray):
@@ -221,60 +238,44 @@ class RecognitionEngine:
         if not trained or not known:
             return 'Desconocido', 0.0, None
 
-        best_id  = None
-        best_sim = -1.0
-        for identity_id, data in known.items():
+        best_id, best_sim = None, -1.0
+        for iid, data in known.items():
             sim = _cosine_sim(embedding, data['embedding'])
             if sim > best_sim:
-                best_sim = sim
-                best_id  = identity_id
+                best_sim, best_id = sim, iid
 
         if best_sim >= COSINE_THRESHOLD:
-            confidence = round(best_sim * 100, 1)
-            return known[best_id]['name'], confidence, best_id
+            return known[best_id]['name'], round(best_sim * 100, 1), best_id
 
         return 'Desconocido', round(max(0.0, best_sim) * 100, 1), None
 
     # ── Log ───────────────────────────────────────────────────────────────────
 
-    def _try_log(self, name, identity_id, confidence, frame):
-        now  = time.time()
-        last = self._last_log.get(name, 0)
-        if now - last < LOG_COOLDOWN:
+    def _try_log(self, name, iid, conf, frame):
+        now = time.time()
+        if now - self._last_log.get(name, 0) < LOG_COOLDOWN:
             return
         self._last_log[name] = now
-
-        screenshot_path = None
-        if name == 'Desconocido':
-            screenshot_path = self.alert_manager.save_screenshot(frame)
-
-        log_access(name, 'known' if name != 'Desconocido' else 'unknown',
-                   confidence, identity_id, screenshot_path)
+        screenshot = self.alert_manager.save_screenshot(frame) if name == 'Desconocido' else None
+        log_access(name, 'known' if name != 'Desconocido' else 'unknown', conf, iid, screenshot)
 
     # ── Dibujo ────────────────────────────────────────────────────────────────
 
     def _draw(self, frame: np.ndarray, results: list) -> np.ndarray:
         for r in results:
             x1, y1, x2, y2 = r['box']
-
-            if r['known'] and r['confidence'] >= 75:
-                color = (50, 220, 100)    # verde — reconocido con alta confianza
-            elif r['known']:
-                color = (50, 165, 255)    # naranja — reconocido con baja confianza
-            else:
-                color = (50, 50, 220)     # rojo — desconocido
-
+            color = (
+                (50, 220, 100) if r['known'] and r['confidence'] >= 75 else
+                (50, 165, 255) if r['known'] else
+                (50,  50, 220)
+            )
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-            label       = f"{r['name']}  {r['confidence']}%"
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+            label      = f"{r['name']}  {r['confidence']}%"
+            (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
             cv2.rectangle(frame, (x1, y2), (x1 + tw + 10, y2 + 24), color, -1)
             cv2.putText(frame, label, (x1 + 5, y2 + 17),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
-
         return frame
 
-    # ── Limpieza ──────────────────────────────────────────────────────────────
-
     def shutdown(self):
-        pass  # InsightFace / onnxruntime no requieren cleanup explícito
+        pass
