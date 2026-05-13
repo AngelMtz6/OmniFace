@@ -92,17 +92,20 @@
           </dl>
 
           {% if renewal_due %}
-          <div class="renewal-banner small">
+          <div class="renewal-banner small mb-3">
             <i class="bi bi-exclamation-triangle me-2"></i>
-            <strong>Renovación requerida.</strong> Acude a un módulo OmniFace para actualizar tu registro facial.
+            <strong>Renovación requerida.</strong> Tu registro necesita actualizarse.
           </div>
+          <a href="{{ url_for('web.register_face_page') }}" class="btn btn-warning btn-sm w-100 fw-semibold"><i class="bi bi-camera me-2"></i>Renovar registro ahora</a>
           {% endif %}
 
         {% else %}
           <div class="text-center py-4 text-secondary">
             <i class="bi bi-camera-slash fs-2 d-block mb-2 opacity-50"></i>
             <span class="small">No tienes un registro facial activo.</span>
-            <div class="mt-2 small opacity-75">Acude a un módulo OmniFace para registrar tu biometría.</div>
+            <div class="mt-3">
+              <a href="{{ url_for('web.register_face_page') }}" class="btn btn-primary btn-sm"><i class="bi bi-camera me-2"></i>Registrar mi rostro</a>
+            </div>
           </div>
         {% endif %}
       </div>

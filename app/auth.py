@@ -64,6 +64,15 @@ def get_account(account_id: int) -> dict | None:
         conn.close()
 
 
+def get_all_accounts() -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT * FROM accounts ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def request_password_reset(correo: str) -> bool:
     """Simulado — en producción enviaría correo con token."""
     conn = get_connection()

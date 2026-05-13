@@ -178,11 +178,18 @@ class OmniFaceApp(ctk.CTk):
                                       font=ctk.CTkFont(size=22, weight="bold"))
         self.reg_title.pack(pady=(15, 5))
 
-        # ── Nombre ──
+        # ── Cuenta ──
         name_row = ctk.CTkFrame(self.view_registration, fg_color="transparent")
         name_row.pack(pady=5)
-        self.name_entry = ctk.CTkEntry(name_row, placeholder_text="Nombre completo", width=260)
-        self.name_entry.pack(side="left", padx=(0, 8))
+        
+        from app.auth import get_all_accounts
+        self.accounts = get_all_accounts()
+        self.account_options = [f"{a['id']} - {a['nombre']} {a['ap_paterno']}" for a in self.accounts]
+        if not self.account_options:
+            self.account_options = ["(No hay cuentas disponibles)"]
+            
+        self.account_combo = ctk.CTkComboBox(name_row, values=self.account_options, width=260)
+        self.account_combo.pack(side="left", padx=(0, 8))
         self.btn_capture = ctk.CTkButton(name_row, text="Iniciar", width=100,
                                          command=self.handle_registration_click)
         self.btn_capture.pack(side="left")
@@ -209,7 +216,7 @@ class OmniFaceApp(ctk.CTk):
 
         # ── Instrucción actual ──
         self.instruction_label = ctk.CTkLabel(self.view_registration,
-                                              text="Ingresa el nombre y presiona Iniciar",
+                                              text="Selecciona una cuenta y presiona Iniciar",
                                               font=ctk.CTkFont(size=14), text_color="#AAAAAA")
         self.instruction_label.pack(pady=(6, 2))
 
@@ -280,12 +287,18 @@ class OmniFaceApp(ctk.CTk):
         self.current_step = 0
         self.current_step_samples = 0
         self.captured_samples = []
-        self.registration_name = ""
+        self.registration_account_id = None
         self.is_capturing_auto = False
-        if hasattr(self, 'name_entry'):
-            self.name_entry.delete(0, 'end')
-            self.name_entry.configure(state="normal")
-            self.instruction_label.configure(text="Ingresa el nombre y presiona Iniciar", text_color="#AAAAAA")
+        if hasattr(self, 'account_combo'):
+            from app.auth import get_all_accounts
+            self.accounts = get_all_accounts()
+            self.account_options = [f"{a['id']} - {a['nombre']} {a['ap_paterno']}" for a in self.accounts]
+            if not self.account_options:
+                self.account_options = ["(No hay cuentas disponibles)"]
+            self.account_combo.configure(values=self.account_options, state="normal")
+            self.account_combo.set(self.account_options[0])
+            
+            self.instruction_label.configure(text="Selecciona una cuenta y presiona Iniciar", text_color="#AAAAAA")
             self.btn_capture.configure(text="Iniciar", fg_color=['#3B8ED0', '#1F538D'], state="normal")
             self.progress_label.configure(text="Paso 0/6  |  Muestras: 0/60")
             self.face_detect_label.configure(text="⬤  Buscando rostro…", text_color="#555555")
@@ -298,12 +311,19 @@ class OmniFaceApp(ctk.CTk):
 
     def handle_registration_click(self):
         if not self.is_capturing_auto:
-            name = self.name_entry.get().strip()
-            if not name:
-                messagebox.showwarning("Atención", "Por favor ingresa un nombre")
+            selected = self.account_combo.get()
+            if not selected or selected == "(No hay cuentas disponibles)":
+                messagebox.showwarning("Atención", "Por favor selecciona una cuenta")
                 return
-            self.registration_name = name
-            self.name_entry.configure(state="disabled")
+            
+            try:
+                acc_id_str = selected.split(" - ")[0]
+                self.registration_account_id = int(acc_id_str)
+            except Exception:
+                messagebox.showwarning("Atención", "Selección de cuenta inválida")
+                return
+                
+            self.account_combo.configure(state="disabled")
             self.btn_capture.configure(text="Registrando…", state="disabled")
             self.is_capturing_auto = True
             self.current_step = 1
@@ -399,11 +419,28 @@ class OmniFaceApp(ctk.CTk):
             self.video_reg_frame.configure(border_color="#552222")
 
     def finish_registration(self):
-        from app.database import save_identity
+        from app.database import save_identity_full
 
         n_samples = len(self.captured_samples)
-        name      = self.registration_name
-        save_identity(name, self.captured_samples)
+        
+        acc = next((a for a in self.accounts if a['id'] == self.registration_account_id), None)
+        if not acc:
+            messagebox.showerror("Error", "No se encontró la cuenta para guardar la identidad.")
+            self.reset_registration_state()
+            return
+            
+        name = f"{acc['nombre']} {acc['ap_paterno']}".strip()
+        
+        save_identity_full(
+            nombre=acc['nombre'],
+            ap_paterno=acc['ap_paterno'],
+            ap_materno=acc['ap_materno'],
+            curp=acc['curp'],
+            fecha_nac=acc['fecha_nac'],
+            correo=acc['correo'],
+            face_blobs=self.captured_samples,
+            account_id=acc['id']
+        )
 
         # Retrain en hilo de fondo para no congelar la GUI
         self.instruction_label.configure(

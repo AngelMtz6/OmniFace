@@ -2,10 +2,11 @@ from flask import (Blueprint, render_template, request, redirect,
                    url_for, session, flash, jsonify)
 from functools import wraps
 from datetime import datetime, date
+import base64
 
 from .database import (
     get_all_identities, get_identity_by_account, get_access_logs,
-    get_stats, get_identity_full
+    get_stats, get_identity_full, save_identity_full, get_connection
 )
 from .auth import create_account, login as auth_login, request_password_reset
 
@@ -197,3 +198,50 @@ def my_history():
         logs = get_access_logs(limit=50, identity_id=identity["id"])
     return render_template("my_history.html", logs=logs,
                            identity=identity)
+
+@web_bp.route("/register_face")
+@login_required
+def register_face_page():
+    return render_template("register_face.html")
+
+@web_bp.route("/api/register_face", methods=["POST"])
+@login_required
+def api_register_face():
+    data = request.get_json()
+    if not data or "frames" not in data:
+        return jsonify({"success": False, "error": "No frames provided"}), 400
+        
+    frames_b64 = data["frames"]
+    if not frames_b64:
+        return jsonify({"success": False, "error": "Empty frames array"}), 400
+        
+    face_blobs = []
+    for b64 in frames_b64:
+        try:
+            if "," in b64:
+                b64 = b64.split(",", 1)[1]
+            img_bytes = base64.b64decode(b64)
+            face_blobs.append(img_bytes)
+        except Exception:
+            pass
+            
+    if not face_blobs:
+         return jsonify({"success": False, "error": "Could not decode any frame"}), 400
+         
+    conn = get_connection()
+    acc = dict(conn.execute("SELECT * FROM accounts WHERE id = ?", (session["account_id"],)).fetchone())
+    conn.close()
+    
+    save_identity_full(
+        nombre=acc['nombre'],
+        ap_paterno=acc['ap_paterno'],
+        ap_materno=acc['ap_materno'],
+        curp=acc['curp'],
+        fecha_nac=acc['fecha_nac'],
+        correo=acc['correo'],
+        face_blobs=face_blobs,
+        account_id=acc['id']
+    )
+    
+    flash("Registro facial completado exitosamente. La aplicación de escritorio procesará las muestras la próxima vez que se inicie.", "success")
+    return jsonify({"success": True})

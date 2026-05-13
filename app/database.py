@@ -56,7 +56,7 @@ def init_db():
         ("fecha_nac",    "TEXT DEFAULT ''"),
         ("correo",       "TEXT DEFAULT ''"),
         ("account_id",   "INTEGER"),
-        ("last_renewal", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+        ("last_renewal", "TIMESTAMP"),
     ]:
         _add_col(conn, "identities", col, typedef)
 

@@ -263,6 +263,7 @@ class RecognitionEngine:
     # ── Dibujo ────────────────────────────────────────────────────────────────
 
     def _draw(self, frame: np.ndarray, results: list) -> np.ndarray:
+        H, W = frame.shape[:2]
         for r in results:
             x1, y1, x2, y2 = r['box']
             color = (
@@ -271,10 +272,30 @@ class RecognitionEngine:
                 (50,  50, 220)
             )
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            label      = f"{r['name']}  {r['confidence']}%"
-            (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
-            cv2.rectangle(frame, (x1, y2), (x1 + tw + 10, y2 + 24), color, -1)
-            cv2.putText(frame, label, (x1 + 5, y2 + 17),
+            label = f"{r['name']}  {r['confidence']}%"
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+            
+            box_w = tw + 10
+            box_h = 24
+            
+            # Ajustar X para que no se salga de la pantalla
+            label_x = x1
+            if label_x + box_w > W:
+                label_x = W - box_w
+            if label_x < 0:
+                label_x = 0
+                
+            # Ajustar Y para que no se salga (por defecto abajo, si no cabe arriba, si no cabe adentro)
+            label_y = y2
+            if label_y + box_h > H:
+                label_y = y1 - box_h
+                if label_y < 0:
+                    label_y = y1
+                    if label_y + box_h > H:
+                        label_y = 0
+
+            cv2.rectangle(frame, (label_x, label_y), (label_x + box_w, label_y + box_h), color, -1)
+            cv2.putText(frame, label, (label_x + 5, label_y + 17),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         return frame
 
