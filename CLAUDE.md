@@ -143,5 +143,5 @@ access_log   (id, identity_id, identity_name, confidence, status, screenshot_pat
 - [x] FACE_SIZE 150×150, radius=2, 4× augmentation
 - [x] Registro guarda muestras alineadas 150×150 (`_prepare_face`)
 - [x] `_detect_all_faces()` — 3 cascades siempre + NMS (fix perfil no reconocido)
-- [ ] Vista "Historial/Logs" — NO implementada
+- [x] Vista "Historial/Logs" — Implementada
 - [ ] Re-registrar personas existentes para aprovechar nuevo pipeline (DB vieja tiene 100×100 sin alinear)

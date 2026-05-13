@@ -126,6 +126,7 @@ class OmniFaceApp(ctk.CTk):
         self.init_monitoring_view()
         self.init_database_view()
         self.init_registration_view()
+        self.init_logs_view()
         
         self.show_view("monitoring")
 
@@ -294,12 +295,16 @@ class OmniFaceApp(ctk.CTk):
         self.view_monitoring.pack_forget()
         self.view_database.pack_forget()
         self.view_registration.pack_forget()
+        self.view_logs.pack_forget()
         
         if view_name == "monitoring":
             self.view_monitoring.pack(expand=True, fill="both")
         elif view_name == "database":
             self.view_database.pack(expand=True, fill="both")
             self.refresh_identities()
+        elif view_name == "logs":
+            self.view_logs.pack(expand=True, fill="both")
+            self.refresh_logs()
         elif view_name == "registration":
             self.reset_registration_state()
             self.view_registration.pack(expand=True, fill="both")
@@ -328,6 +333,74 @@ class OmniFaceApp(ctk.CTk):
             delete_identity(identity_id)
             self.refresh_identities()
             threading.Thread(target=self.engine.retrain, daemon=True).start()
+
+    # ── Vista de Historial ──
+
+    def init_logs_view(self):
+        self.view_logs = ctk.CTkFrame(self.main_content, fg_color="transparent")
+        
+        self.logs_title = ctk.CTkLabel(self.view_logs, text="Historial de Accesos", font=ctk.CTkFont(size=24, weight="bold"))
+        self.logs_title.pack(pady=(0, 20))
+        
+        # Header de tabla
+        header = ctk.CTkFrame(self.view_logs, fg_color="#2a2a3a", height=30)
+        header.pack(fill="x", padx=10, pady=(0, 5))
+        
+        ctk.CTkLabel(header, text="Fecha/Hora", width=150, font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10)
+        ctk.CTkLabel(header, text="Nombre", width=150, font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10)
+        ctk.CTkLabel(header, text="Estado", width=100, font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10)
+        ctk.CTkLabel(header, text="Confianza", width=80, font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10)
+
+        self.logs_list = ctk.CTkScrollableFrame(self.view_logs, fg_color="#1a1a2a")
+        self.logs_list.pack(expand=True, fill="both", padx=10, pady=10)
+
+    def refresh_logs(self):
+        from app.database import get_access_logs
+        
+        # Limpiar lista
+        for widget in self.logs_list.winfo_children():
+            widget.destroy()
+            
+        logs = get_access_logs(limit=50)
+        for log in logs:
+            row = ctk.CTkFrame(self.logs_list, fg_color="#232333" if log['status'] == 'known' else "#331a1a")
+            row.pack(fill="x", pady=2, padx=5)
+            
+            # Formatear timestamp (YYYY-MM-DD HH:MM:SS → DD/MM HH:MM)
+            ts = log['timestamp'] or ""
+            try:
+                ts = ts[:16].replace("T", " ")
+            except Exception:
+                pass
+
+            conf_val = log['confidence']
+            conf_str = f"{conf_val:.1f}%" if conf_val is not None else "—"
+
+            ctk.CTkLabel(row, text=ts, width=150, font=ctk.CTkFont(size=11)).pack(side="left", padx=10)
+            ctk.CTkLabel(row, text=log['identity_name'], width=150, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+
+            status_color = "#50CD64" if log['status'] == 'known' else "#FF5555"
+            status_text  = "CONOCIDO" if log['status'] == 'known' else "DESCONOCIDO"
+            ctk.CTkLabel(row, text=status_text, width=100, text_color=status_color).pack(side="left", padx=10)
+
+            ctk.CTkLabel(row, text=conf_str, width=80).pack(side="left", padx=10)
+            
+            if log['screenshot_path'] and os.path.exists(log['screenshot_path']):
+                btn_view = ctk.CTkButton(row, text="Ver Foto", width=80, font=ctk.CTkFont(size=11),
+                                        command=lambda p=log['screenshot_path']: self.view_screenshot(p))
+                btn_view.pack(side="right", padx=10)
+
+    def view_screenshot(self, path):
+        try:
+            # Abrir imagen con el visor predeterminado del sistema
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path])
+            else:
+                subprocess.run(["xdg-open", path])
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir la imagen: {e}")
 
     # ── Lógica de Registro ──
 
