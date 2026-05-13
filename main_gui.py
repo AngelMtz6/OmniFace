@@ -29,7 +29,6 @@ import os
 import sys
 import pystray
 from pystray import MenuItem as item
-
 from app.camera import VideoCamera
 from app.recognition import RecognitionEngine
 from app.database import init_db, get_all_identities, delete_identity, get_access_logs, get_stats
