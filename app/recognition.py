@@ -69,10 +69,11 @@ class RecognitionEngine:
         self._last_log: dict[str, float] = {}
         self.alert_manager = AlertManager()
 
-        # ── Preprocesado CLAHE — siempre CPU (OpenCV sin CUDA en Python 3.14) ──
-        # La GPU se usa vía onnxruntime para inferencia de modelos (InsightFace).
+        # ── Preprocesado CLAHE — siempre CPU (OpenCV sin CUDA en PyPI) ──────────
+        # opencv-contrib-python de PyPI NO tiene soporte CUDA compilado.
+        # La GPU se usa ÚNICAMENTE vía onnxruntime (InsightFace / modelos ONNX).
         self.clahe     = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        self._use_cuda = _CUDA_AVAILABLE   # flag para futuras ops GPU
+        self._use_cuda = False   # cv2.cuda no disponible en wheels de PyPI
 
         # ── Pool de hilos: detección + reconocimiento en paralelo ─────────────
         # max_workers = min(6, cores) para no saturar en laptops
