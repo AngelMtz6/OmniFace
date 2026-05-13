@@ -106,8 +106,11 @@ class OmniFaceApp(ctk.CTk):
         self.btn_logs = ctk.CTkButton(self.sidebar, text="Historial", command=lambda: self.show_view("logs"))
         self.btn_logs.pack(pady=10, padx=20)
 
+        self.btn_exit = ctk.CTkButton(self.sidebar, text="Salir del Sistema", fg_color="#441111", hover_color="#662222", command=self.quit)
+        self.btn_exit.pack(side="bottom", pady=(10, 5), padx=20)
+
         self.sidebar_footer = ctk.CTkLabel(self.sidebar, text="Hackatec 2026", font=ctk.CTkFont(size=10))
-        self.sidebar_footer.pack(side="bottom", pady=20)
+        self.sidebar_footer.pack(side="bottom", pady=(5, 10))
 
         # ── Main Content Area ──
         self.main_content = ctk.CTkFrame(self, corner_radius=15, fg_color="transparent")
@@ -153,11 +156,20 @@ class OmniFaceApp(ctk.CTk):
         self.btn_switch_cam.pack(side="right", padx=20)
 
     def switch_camera(self):
-        self.camera_index = (self.camera_index + 1) % 3  # Probar 0, 1, 2
-        self.camera.release()
-        self.camera._initialized = False  # Resetear para forzar re-init
-        self.camera.__init__(video_source=self.camera_index)
-        messagebox.showinfo("Cámara", f"Cambiando a fuente de video #{self.camera_index}")
+        try:
+            self.camera_index = (self.camera_index + 1) % 3  # Probar 0, 1, 2
+            self.camera.release()
+            self.camera._initialized = False  # Resetear para forzar re-init
+            self.camera.__init__(video_source=self.camera_index)
+            
+            # Dar un momento para inicializar
+            time.sleep(0.5)
+            if not self.camera.cap.isOpened():
+                messagebox.showwarning("Cámara", f"No se pudo abrir la cámara #{self.camera_index}.\n\nAsegúrate de que no esté bloqueada por otra aplicación (como el navegador o Zoom).")
+            else:
+                messagebox.showinfo("Cámara", f"Cambiando a fuente de video #{self.camera_index}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cambiar cámara: {e}")
 
     def init_database_view(self):
         self.view_database = ctk.CTkFrame(self.main_content, fg_color="transparent")

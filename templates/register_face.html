@@ -42,6 +42,11 @@
 {% block scripts %}
 <script>
 document.addEventListener("DOMContentLoaded", () => {
+    // Check secure context
+    if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        alert("⚠️ SEGURIDAD: Los navegadores bloquean la cámara en conexiones HTTP no seguras (como IPs privadas).\n\nPara que funcione en el celular, usa 'localhost' en la PC o usa un túnel HTTPS (como ngrok).");
+    }
+
     const video = document.getElementById("webcam");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
@@ -109,7 +114,6 @@ document.addEventListener("DOMContentLoaded", () => {
             
             // Draw to canvas and get base64
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            // Formato JPEG comprimido a 0.8
             const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
             frames.push(dataUrl);
             count++;
