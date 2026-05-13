@@ -2,6 +2,7 @@ import sqlite3
 import os
 import threading
 import subprocess
+from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'omniface.db')
 
@@ -171,12 +172,13 @@ def save_identity_full(nombre, ap_paterno, ap_materno, curp, fecha_nac,
     try:
         display_name = f"{nombre} {ap_paterno} {ap_materno}".strip()
         c = conn.cursor()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         c.execute("""
             INSERT INTO identities
-                (name, ap_paterno, ap_materno, curp, fecha_nac, correo, account_id)
-            VALUES (?,?,?,?,?,?,?)
+                (name, ap_paterno, ap_materno, curp, fecha_nac, correo, account_id, last_renewal, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
         """, (display_name, ap_paterno, ap_materno, curp.upper(),
-              fecha_nac, correo, account_id))
+              fecha_nac, correo, account_id, now, now))
         identity_id = c.lastrowid
         c.executemany(
             "INSERT INTO face_samples (identity_id, face_data) VALUES (?,?)",
@@ -238,9 +240,10 @@ def get_all_face_samples() -> list[tuple]:
 
 def update_identity_renewal(identity_id: int):
     conn = get_connection()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "UPDATE identities SET last_renewal = CURRENT_TIMESTAMP WHERE id = ?",
-        (identity_id,)
+        "UPDATE identities SET last_renewal = ? WHERE id = ?",
+        (now, identity_id)
     )
     conn.commit()
     conn.close()
@@ -251,11 +254,12 @@ def update_identity_renewal(identity_id: int):
 def log_access(identity_name, status, confidence=None,
                identity_id=None, screenshot_path=None, camera_name=""):
     conn = get_connection()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("""
         INSERT INTO access_log
-            (identity_id, identity_name, confidence, status, screenshot_path, camera_name)
-        VALUES (?,?,?,?,?,?)
-    """, (identity_id, identity_name, confidence, status, screenshot_path, camera_name))
+            (identity_id, identity_name, confidence, status, screenshot_path, camera_name, timestamp)
+        VALUES (?,?,?,?,?,?,?)
+    """, (identity_id, identity_name, confidence, status, screenshot_path, camera_name, now))
     conn.commit()
     conn.close()
     # Notificar al pusher periódico para que incluya esta detección en el próximo push
