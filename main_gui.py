@@ -263,31 +263,46 @@ class OmniFaceApp(ctk.CTk):
         # total = 10 × 6 = 60
 
     def sync_cloud(self):
-        """Descarga cambios de Git (Pull) y refresca el motor de reconocimiento."""
+        """
+        Importa solo las identidades/muestras nuevas del DB remoto (Git).
+        NO reemplaza el DB completo — los logs, cámaras y cuentas locales
+        se conservan intactos.
+        """
+        from app.sync import pull_db_identities
+
         def _bg_sync():
             try:
-                self.btn_sync.configure(state="disabled", text="Sincronizando...")
-                root = os.path.dirname(os.path.abspath(__file__))
-                
-                # Ejecutar pull
-                process = subprocess.run("git pull origin main --rebase", shell=True, cwd=root, capture_output=True, text=True)
-                
-                if process.returncode == 0:
-                    # Forzar re-entrenamiento del motor con los nuevos datos
-                    print("[OmniFace] Sincronización exitosa. Reentrenando motor...")
+                self.after(0, lambda: self.btn_sync.configure(
+                    state="disabled", text="⏳ Sincronizando…"))
+
+                ok, msg = pull_db_identities()
+
+                if ok:
+                    # Reentrenar con los datos nuevos
+                    self.after(0, lambda: self.btn_sync.configure(
+                        text="⏳ Entrenando…"))
                     self.engine.retrain()
-                    
-                    # Refrescar vista si estamos en la base de datos
-                    if self.current_view == "database":
-                        self.refresh_identities()
-                        
-                    messagebox.showinfo("Sincronización", "¡Datos actualizados desde la nube!\n\nEl sistema ya reconoce a los nuevos usuarios registrados.")
+
+                    def _on_done():
+                        # Refrescar vistas si corresponde
+                        if self.current_view == "database":
+                            self.refresh_identities()
+                        messagebox.showinfo(
+                            "Sincronización completada",
+                            f"✓ {msg}\n\n"
+                            "El motor ya reconoce a los nuevos usuarios."
+                        )
+                    self.after(0, _on_done)
                 else:
-                    messagebox.showerror("Error", f"Error al sincronizar:\n{process.stderr}")
+                    self.after(0, lambda: messagebox.showerror(
+                        "Error de sincronización", msg))
+
             except Exception as e:
-                messagebox.showerror("Error", f"Error inesperado: {e}")
+                self.after(0, lambda: messagebox.showerror(
+                    "Error inesperado", str(e)))
             finally:
-                self.btn_sync.configure(state="normal", text="Sincronizar Nube")
+                self.after(0, lambda: self.btn_sync.configure(
+                    state="normal", text="Sincronizar Nube"))
 
         threading.Thread(target=_bg_sync, daemon=True).start()
 

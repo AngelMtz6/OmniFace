@@ -10,6 +10,7 @@ from .database import (
     delete_identity
 )
 from .auth import create_account, login as auth_login, request_password_reset
+from .sync import push_db
 
 web_bp = Blueprint("web", __name__)
 
@@ -251,6 +252,10 @@ def api_register_face():
         account_id=acc['id']
     )
 
-    flash("Registro facial completado exitosamente. La app de escritorio "
-          "procesará las muestras la próxima vez que se inicie.", "success")
+    # Sincronizar DB con Git en fondo (no bloquea la respuesta HTTP)
+    nombre_completo = f"{acc['nombre']} {acc['ap_paterno']}".strip()
+    push_db(nombre_completo)
+
+    flash("Registro facial completado. Los datos se están sincronizando "
+          "con el sistema central.", "success")
     return jsonify({"success": True})
