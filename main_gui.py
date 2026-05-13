@@ -112,6 +112,9 @@ class OmniFaceApp(ctk.CTk):
         self.btn_logs = ctk.CTkButton(self.sidebar, text="Historial", command=lambda: self.show_view("logs"))
         self.btn_logs.pack(pady=10, padx=20)
 
+        self.btn_search = ctk.CTkButton(self.sidebar, text="Búsqueda", command=lambda: self.show_view("search"))
+        self.btn_search.pack(pady=10, padx=20)
+
         self.btn_sync = ctk.CTkButton(self.sidebar, text="Sincronizar Nube", fg_color="#1f538d", hover_color="#14375e", command=self.sync_cloud)
         self.btn_sync.pack(pady=10, padx=20)
 
@@ -130,7 +133,8 @@ class OmniFaceApp(ctk.CTk):
         self.init_database_view()
         self.init_registration_view()
         self.init_logs_view()
-        
+        self.init_search_view()
+
         self.show_view("monitoring")
 
         # ── System Tray ──
@@ -150,37 +154,128 @@ class OmniFaceApp(ctk.CTk):
 
     def init_monitoring_view(self):
         self.view_monitoring = ctk.CTkFrame(self.main_content, fg_color="transparent")
-        
-        # Feed de Video
-        self.video_label = tk.Label(self.view_monitoring, bg="#1a1a1a")
-        self.video_label.pack(expand=True, fill="both", padx=10, pady=10)
-        
-        # Panel de Status
-        self.status_panel = ctk.CTkFrame(self.view_monitoring, height=100)
-        self.status_panel.pack(fill="x", padx=10, pady=(0, 10))
-        
-        self.status_text = ctk.CTkLabel(self.status_panel, text="Sistema: Activo", text_color="#50CD64", font=ctk.CTkFont(weight="bold"))
-        self.status_text.pack(side="left", padx=20)
-        
-        self.btn_switch_cam = ctk.CTkButton(self.status_panel, text="Cambiar Cámara", width=120, command=self.switch_camera)
-        self.btn_switch_cam.pack(side="right", padx=20)
+
+        # ── Barra de controles (se reserva primero → nunca queda tapada) ──────
+        self.status_panel = ctk.CTkFrame(self.view_monitoring, height=44, corner_radius=8)
+        self.status_panel.pack(side="bottom", fill="x", padx=10, pady=(4, 10))
+        self.status_panel.pack_propagate(False)
+
+        self.status_text = ctk.CTkLabel(
+            self.status_panel, text="⬤  Sistema activo",
+            text_color="#50CD64", font=ctk.CTkFont(weight="bold"))
+        self.status_text.pack(side="left", padx=14)
+
+        self.btn_switch_cam = ctk.CTkButton(
+            self.status_panel, text="Cambiar cámara", width=130,
+            command=self.switch_camera)
+        self.btn_switch_cam.pack(side="right", padx=8)
+
+        self.btn_clear_log = ctk.CTkButton(
+            self.status_panel, text="Limpiar log", width=110,
+            fg_color="#2a2a3a", hover_color="#3a3a4a",
+            command=self._clear_monitor_log)
+        self.btn_clear_log.pack(side="right", padx=4)
+
+        # ── Contenido principal: video + log lateral ──────────────────────────
+        content = ctk.CTkFrame(self.view_monitoring, fg_color="transparent")
+        content.pack(expand=True, fill="both", padx=10, pady=(10, 4))
+        content.grid_columnconfigure(0, weight=3)
+        content.grid_columnconfigure(1, weight=1, minsize=220)
+        content.grid_rowconfigure(0, weight=1)
+
+        # Feed de vídeo
+        self.video_label = tk.Label(content, bg="#1a1a1a")
+        self.video_label.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+
+        # Panel log en vivo
+        log_panel = ctk.CTkFrame(content, fg_color="#12121e", corner_radius=10)
+        log_panel.grid(row=0, column=1, sticky="nsew")
+        log_panel.grid_rowconfigure(1, weight=1)
+        log_panel.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            log_panel, text="Detecciones recientes",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#8888aa"
+        ).grid(row=0, column=0, pady=(10, 4), padx=10, sticky="w")
+
+        self.monitor_log_frame = ctk.CTkScrollableFrame(
+            log_panel, fg_color="transparent", corner_radius=0)
+        self.monitor_log_frame.grid(row=1, column=0, sticky="nsew", padx=4, pady=(0, 6))
+
+        # Actualizar el log lateral cada 4 s
+        self._schedule_monitor_log_refresh()
 
     def switch_camera(self):
         try:
-            self.camera_index = (self.camera_index + 1) % 3  # Probar 0, 1, 2
+            self.camera_index = (self.camera_index + 1) % 3
             self.camera_label = f"Cámara {self.camera_index}"
             self.camera.release()
-            self.camera._initialized = False  # Resetear para forzar re-init
+            self.camera._initialized = False
             self.camera.__init__(video_source=self.camera_index)
-            
-            # Dar un momento para inicializar
             time.sleep(0.5)
             if not self.camera.cap.isOpened():
-                messagebox.showwarning("Cámara", f"No se pudo abrir la cámara #{self.camera_index}.\n\nAsegúrate de que no esté bloqueada por otra aplicación (como el navegador o Zoom).")
+                messagebox.showwarning("Cámara", f"No se pudo abrir la cámara #{self.camera_index}.\n\nAsegúrate de que no esté bloqueada por otra aplicación.")
             else:
                 messagebox.showinfo("Cámara", f"Cambiando a fuente de video #{self.camera_index}")
         except Exception as e:
             messagebox.showerror("Error", f"Error al cambiar cámara: {e}")
+
+    # ── Log lateral de monitoreo ──────────────────────────────────────────────
+
+    def _schedule_monitor_log_refresh(self):
+        """Programa la actualización del log lateral cada 4 s."""
+        self._refresh_monitor_log()
+        self.after(4000, self._schedule_monitor_log_refresh)
+
+    def _refresh_monitor_log(self):
+        """Rellena el panel lateral con las últimas 20 detecciones."""
+        if not hasattr(self, 'monitor_log_frame'):
+            return
+        from app.database import get_access_logs
+        for w in self.monitor_log_frame.winfo_children():
+            w.destroy()
+        logs = get_access_logs(limit=20)
+        if not logs:
+            ctk.CTkLabel(self.monitor_log_frame, text="Sin detecciones aún",
+                         text_color="#444466", font=ctk.CTkFont(size=11)).pack(pady=20)
+            return
+        for log in logs:
+            known  = log['status'] == 'known'
+            color  = "#1a2e1a" if known else "#2e1a1a"
+            tcolor = "#50CD64" if known else "#FF5555"
+            ts     = (log['timestamp'] or "")[:16].replace("T", " ")
+            conf   = log['confidence']
+            conf_s = f"  {conf:.0f}%" if conf is not None else ""
+
+            card = ctk.CTkFrame(self.monitor_log_frame, fg_color=color,
+                                corner_radius=6, height=52)
+            card.pack(fill="x", pady=2, padx=2)
+            card.pack_propagate(False)
+
+            ctk.CTkLabel(card,
+                         text="✓" if known else "?",
+                         text_color=tcolor,
+                         font=ctk.CTkFont(size=14, weight="bold"),
+                         width=24).place(x=6, y=8)
+            ctk.CTkLabel(card,
+                         text=log['identity_name'],
+                         font=ctk.CTkFont(size=11, weight="bold"),
+                         text_color="#dddddd",
+                         anchor="w").place(x=30, y=6)
+            ctk.CTkLabel(card,
+                         text=f"{ts}{conf_s}",
+                         font=ctk.CTkFont(size=10),
+                         text_color="#777799",
+                         anchor="w").place(x=30, y=26)
+
+    def _clear_monitor_log(self):
+        if not hasattr(self, 'monitor_log_frame'):
+            return
+        for w in self.monitor_log_frame.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self.monitor_log_frame, text="Log limpiado",
+                     text_color="#444466", font=ctk.CTkFont(size=11)).pack(pady=20)
 
     def init_database_view(self):
         self.view_database = ctk.CTkFrame(self.main_content, fg_color="transparent")
@@ -265,6 +360,155 @@ class OmniFaceApp(ctk.CTk):
         self.progress_label.pack()
         # total = 10 × 6 = 60
 
+    # ── Vista Búsqueda especializada ──────────────────────────────────────────
+
+    def init_search_view(self):
+        self.view_search = ctk.CTkFrame(self.main_content, fg_color="transparent")
+
+        # ── Título ──
+        ctk.CTkLabel(self.view_search, text="Búsqueda especializada",
+                     font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(16, 4))
+        ctk.CTkLabel(self.view_search,
+                     text="Selecciona una identidad registrada para ver todo su historial de detecciones.",
+                     font=ctk.CTkFont(size=12), text_color="#888888").pack()
+
+        # ── Barra de búsqueda ──
+        bar = ctk.CTkFrame(self.view_search, fg_color="#1a1a2e", corner_radius=10)
+        bar.pack(fill="x", padx=20, pady=14)
+
+        ctk.CTkLabel(bar, text="Identidad:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(14, 6), pady=12)
+
+        self.search_combo = ctk.CTkComboBox(bar, values=["Cargando..."], width=280,
+                                            state="readonly")
+        self.search_combo.pack(side="left", padx=6, pady=12)
+
+        ctk.CTkLabel(bar, text="Estado:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(16, 6))
+        self.search_status_var = tk.StringVar(value="Todos")
+        self.search_status_menu = ctk.CTkOptionMenu(
+            bar, values=["Todos", "Conocido", "Desconocido"],
+            variable=self.search_status_var, width=130)
+        self.search_status_menu.pack(side="left", padx=6, pady=12)
+
+        ctk.CTkButton(bar, text="Buscar", width=90,
+                      command=self._run_search).pack(side="left", padx=10, pady=12)
+        ctk.CTkButton(bar, text="Limpiar", width=80,
+                      fg_color="#2a2a3a", hover_color="#3a3a4a",
+                      command=self._clear_search).pack(side="left", padx=4)
+
+        # ── Contador de resultados ──
+        self.search_count_label = ctk.CTkLabel(
+            self.view_search, text="", font=ctk.CTkFont(size=11), text_color="#666699")
+        self.search_count_label.pack(anchor="w", padx=24)
+
+        # ── Cabecera de tabla ──
+        hdr = ctk.CTkFrame(self.view_search, fg_color="#2a2a3a", height=30, corner_radius=0)
+        hdr.pack(fill="x", padx=20)
+        hdr.pack_propagate(False)
+        for txt, w in [("#", 40), ("Fecha / Hora", 160), ("Estado", 110),
+                       ("Confianza", 90), ("Cámara", 160), ("Foto", 60)]:
+            ctk.CTkLabel(hdr, text=txt, width=w,
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         anchor="w").pack(side="left", padx=6)
+
+        # ── Lista de resultados ──
+        self.search_results_frame = ctk.CTkScrollableFrame(
+            self.view_search, fg_color="#111120", corner_radius=0)
+        self.search_results_frame.pack(expand=True, fill="both", padx=20, pady=(0, 14))
+
+    def _populate_search_combo(self):
+        """Carga las identidades disponibles en el combo."""
+        identities = get_all_identities()
+        names = [f"{i['id']} — {i['name']}" for i in identities]
+        if not names:
+            names = ["(Sin identidades registradas)"]
+        self.search_combo.configure(values=names)
+        self.search_combo.set(names[0])
+
+    def _run_search(self):
+        """Ejecuta la búsqueda y muestra resultados."""
+        from app.database import get_access_logs
+
+        # Limpiar resultados anteriores
+        for w in self.search_results_frame.winfo_children():
+            w.destroy()
+
+        selected = self.search_combo.get()
+        if not selected or "Sin identidades" in selected:
+            self.search_count_label.configure(text="No hay identidades para buscar.")
+            return
+
+        try:
+            identity_id = int(selected.split(" — ")[0])
+        except (ValueError, IndexError):
+            self.search_count_label.configure(text="Selección inválida.")
+            return
+
+        status_filter = self.search_status_var.get()
+
+        # Obtener todos los logs de esta identidad
+        all_logs = get_access_logs(limit=500, identity_id=identity_id)
+
+        # Aplicar filtro de estado
+        if status_filter == "Conocido":
+            all_logs = [l for l in all_logs if l['status'] == 'known']
+        elif status_filter == "Desconocido":
+            all_logs = [l for l in all_logs if l['status'] == 'unknown']
+
+        total = len(all_logs)
+        nombre = selected.split(" — ", 1)[1] if " — " in selected else selected
+        self.search_count_label.configure(
+            text=f"  {total} resultado(s) para '{nombre}' — filtro: {status_filter}")
+
+        if not all_logs:
+            ctk.CTkLabel(self.search_results_frame,
+                         text="Sin resultados con los filtros aplicados.",
+                         text_color="#555577",
+                         font=ctk.CTkFont(size=13)).pack(pady=30)
+            return
+
+        for idx, log in enumerate(all_logs):
+            known   = log['status'] == 'known'
+            bg      = "#181828" if idx % 2 == 0 else "#141422"
+            tcolor  = "#50CD64" if known else "#FF5555"
+            ts      = (log['timestamp'] or "")[:16].replace("T", " ")
+            conf    = log['confidence']
+            conf_s  = f"{conf:.1f}%" if conf is not None else "—"
+            status_s = "Conocido" if known else "Desconocido"
+
+            row = ctk.CTkFrame(self.search_results_frame, fg_color=bg,
+                               corner_radius=0, height=34)
+            row.pack(fill="x", pady=1)
+            row.pack_propagate(False)
+
+            ctk.CTkLabel(row, text=str(idx + 1), width=40,
+                         font=ctk.CTkFont(size=11), text_color="#555577",
+                         anchor="e").pack(side="left", padx=6)
+            ctk.CTkLabel(row, text=ts, width=160,
+                         font=ctk.CTkFont(size=11), anchor="w").pack(side="left", padx=6)
+            ctk.CTkLabel(row, text=status_s, width=110,
+                         text_color=tcolor, font=ctk.CTkFont(size=11, weight="bold"),
+                         anchor="w").pack(side="left", padx=6)
+            ctk.CTkLabel(row, text=conf_s, width=90,
+                         font=ctk.CTkFont(size=11), anchor="w").pack(side="left", padx=6)
+            ctk.CTkLabel(row, text=log.get('camera_name') or "—", width=160,
+                         font=ctk.CTkFont(size=11), text_color="#8888aa",
+                         anchor="w").pack(side="left", padx=6)
+
+            if log.get('screenshot_path') and os.path.exists(log['screenshot_path']):
+                ctk.CTkButton(row, text="Ver", width=52,
+                              font=ctk.CTkFont(size=10),
+                              command=lambda p=log['screenshot_path']: self.view_screenshot(p)
+                              ).pack(side="left", padx=4)
+            else:
+                ctk.CTkLabel(row, text="—", width=60,
+                             font=ctk.CTkFont(size=11),
+                             text_color="#333355").pack(side="left", padx=6)
+
+    def _clear_search(self):
+        for w in self.search_results_frame.winfo_children():
+            w.destroy()
+        self.search_count_label.configure(text="")
+
     def sync_cloud(self):
         """
         Importa solo las identidades/muestras nuevas del DB remoto (Git).
@@ -314,7 +558,8 @@ class OmniFaceApp(ctk.CTk):
         self.view_database.pack_forget()
         self.view_registration.pack_forget()
         self.view_logs.pack_forget()
-        
+        self.view_search.pack_forget()
+
         if view_name == "monitoring":
             self.view_monitoring.pack(expand=True, fill="both")
         elif view_name == "database":
@@ -326,7 +571,10 @@ class OmniFaceApp(ctk.CTk):
         elif view_name == "registration":
             self.reset_registration_state()
             self.view_registration.pack(expand=True, fill="both")
-        
+        elif view_name == "search":
+            self.view_search.pack(expand=True, fill="both")
+            self._populate_search_combo()
+
         self.current_view = view_name
 
     def refresh_identities(self):
