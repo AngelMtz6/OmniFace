@@ -13,7 +13,7 @@ build/
 
 # Project data (synced via Git for demo)
 # data/
-# screenshots/
+screenshots/*.jpg
 
 # Models cache (heavy, se descargan en instalacion)
 .deepface/
