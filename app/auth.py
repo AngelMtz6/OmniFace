@@ -1,7 +1,7 @@
 import hashlib
 import os
 import sqlite3
-from .database import get_connection
+from .database import get_connection, git_sync
 
 
 def _hash(password: str) -> str:
@@ -32,6 +32,7 @@ def create_account(nombre, ap_paterno, ap_materno, curp, fecha_nac,
              fecha_nac, correo.lower(), _hash(password), role)
         )
         conn.commit()
+        git_sync()
         return c.lastrowid
     except sqlite3.IntegrityError as e:
         msg = str(e).lower()

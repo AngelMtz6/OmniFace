@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import threading
+import subprocess
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'omniface.db')
 
@@ -10,6 +12,23 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def git_sync():
+    """Ejecuta un push a Git en segundo plano para sincronizar la DB."""
+    def _sync():
+        try:
+            # Directorio raíz del proyecto
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # Usar shell=True en Windows para evitar problemas con ejecutables
+            subprocess.run("git add data/omniface.db screenshots/", shell=True, cwd=root)
+            subprocess.run('git commit -m "Sincronización automática de registros"', shell=True, cwd=root)
+            subprocess.run("git push origin main", shell=True, cwd=root)
+            print("[OmniFace] Sincronización con Git completada.")
+        except Exception as e:
+            print(f"[OmniFace] Error en sincronización Git: {e}")
+
+    threading.Thread(target=_sync, daemon=True).start()
 
 
 def _add_col(conn, table: str, col: str, typedef: str):
@@ -150,6 +169,8 @@ def save_identity_full(nombre, ap_paterno, ap_materno, curp, fecha_nac,
             [(identity_id, b) for b in face_blobs]
         )
         conn.commit()
+        # Sincronizar con Git automáticamente
+        git_sync()
         return identity_id
     finally:
         conn.close()

@@ -11,9 +11,9 @@ venv/
 dist/
 build/
 
-# Project data (local only)
-data/
-screenshots/
+# Project data (synced via Git for demo)
+# data/
+# screenshots/
 
 # Models cache (heavy, se descargan en instalacion)
 .deepface/
