@@ -10,7 +10,9 @@
 |----------|---------|
 | **Python** | 3.14 |
 | **Entorno virtual** | `.venv\` — activar con `.venv\Scripts\activate` |
-| **Entry point** | `run.bat` ó `.venv\Scripts\python.exe main_gui.py` |
+| **Entry point escritorio** | `run.bat` ó `.venv\Scripts\python.exe main_gui.py` |
+| **Entry point web (HTTP)** | `.venv\Scripts\python.exe run.py` → `localhost:5000` |
+| **Entry point web (HTTPS)** | `.venv\Scripts\python.exe run_ngrok.py` → URL pública ngrok |
 | **Auto-relanzador** | `main_gui.py` detecta si corre sin venv y se relanza solo |
 
 ---
@@ -26,6 +28,9 @@
 | `customtkinter` | 5.2.0 | GUI de escritorio — ventanas, botones, sidebar, labels de video |
 | `Pillow` (PIL) | 10.0.0 | Convertir frames OpenCV → formato compatible con tkinter (`ImageTk.PhotoImage`) |
 | `pystray` | 0.19.0 | Ícono en bandeja del sistema (minimizar a tray) |
+| `Flask` | 3.x | Servidor web — rutas, sesiones, Jinja2 |
+| `Werkzeug` | — | Hashing de contraseñas (`generate_password_hash` / `check_password_hash`) |
+| `pyngrok` | latest | Túnel HTTPS automático — permite cámara web en dispositivos remotos |
 
 ---
 
@@ -80,20 +85,44 @@
 
 ```
 OmniFace-1/
-├── main_gui.py          ← GUI completa (CustomTkinter) + loop de video + registro
-├── run.bat              ← Lanzador con venv correcto
+├── main_gui.py          ← App escritorio (CustomTkinter) — monitor, registro, gestión
+├── run.py               ← Entry point Flask (HTTP localhost:5000)
+├── run_ngrok.py         ← Entry point Flask + túnel HTTPS ngrok
+├── run.bat              ← Lanzador escritorio con venv correcto
+├── run_ngrok.bat        ← Lanzador web con ngrok (doble clic)
+│
 ├── app/
+│   ├── __init__.py      ← App factory Flask (create_app)
+│   ├── routes.py        ← Rutas web: login, registro, dashboard, perfil, historial, API
+│   ├── auth.py          ← Autenticación web — create_account, login, reset password
 │   ├── recognition.py   ← Motor InsightFace (RetinaFace + ArcFace + retrain)
 │   ├── camera.py        ← Singleton VideoCamera — get_frame() thread-safe
-│   ├── database.py      ← SQLite: CRUD de identidades, muestras, logs
-│   ├── alerts.py        ← AlertManager: contador de desconocidos + screenshots
-│   ├── routes.py        ← NO USAR (leftover Flask/web)
-│   └── __init__.py      ← NO USAR (leftover Flask/web)
+│   ├── database.py      ← SQLite CRUD — identidades, muestras, logs, stats de usuario
+│   ├── alerts.py        ← AlertManager — capturas de desconocidos
+│   └── sync.py          ← Sincronización Git:
+│                             push_db()              — commit + push en hilo de fondo
+│                             pull_db_identities()   — importa solo identidades nuevas
+│                             start_detection_pusher() — push automático cada 10 s
+│                             mark_detection_pending() — llamado por log_access()
+│
+├── templates/           ← Jinja2 — Bootstrap 5 dark theme
+│   ├── base.html
+│   ├── login.html
+│   ├── register.html
+│   ├── dashboard.html        ← Stats personales + detecciones deduplicadas por cámara
+│   ├── profile.html
+│   ├── my_history.html       ← Historial completo con barra de confianza
+│   ├── register_face.html    ← Captura 60 frames via webcam → POST /api/register_face
+│   └── forgot_password.html
+│
+├── static/
+│   └── screenshots/     ← Capturas automáticas de desconocidos
+│
 ├── data/
 │   └── omniface.db      ← Base de datos SQLite (generada automáticamente)
+│
 ├── assets/
 │   └── logo.png
-├── screenshots/         ← Capturas automáticas de desconocidos
 ├── CLAUDE.md            ← Knowledge Graph del proyecto (para Claude)
 ├── STACK.md             ← Este archivo
 └── requirements.txt
@@ -104,31 +133,60 @@ OmniFace-1/
 ## Base de datos (SQLite)
 
 ```sql
--- Personas registradas
+-- Cuentas de usuario (login web + desktop)
+accounts (
+    id            INTEGER PRIMARY KEY,
+    nombre        TEXT NOT NULL,
+    ap_paterno    TEXT NOT NULL,
+    ap_materno    TEXT DEFAULT '',
+    curp          TEXT UNIQUE NOT NULL,
+    fecha_nac     TEXT NOT NULL,
+    correo        TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role          TEXT DEFAULT 'user',   -- 'user' | 'admin'
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+
+-- Personas registradas con datos personales
 identities (
-    id          INTEGER PRIMARY KEY,
-    name        TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id           INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,          -- nombre completo display
+    ap_paterno   TEXT DEFAULT '',
+    ap_materno   TEXT DEFAULT '',
+    curp         TEXT DEFAULT '',
+    fecha_nac    TEXT DEFAULT '',
+    correo       TEXT DEFAULT '',
+    account_id   INTEGER,               -- FK → accounts.id (NULL si registro desktop)
+    last_renewal TIMESTAMP,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 
 -- Muestras faciales por persona (BLOBs JPEG 224×224 color)
--- Formato nuevo: 224×224 BGR JPEG — compatible con RetinaFace en retrain
--- Formato antiguo (ignorado): 100×100 grises LBPH
 face_samples (
     id          INTEGER PRIMARY KEY,
-    identity_id INTEGER NOT NULL,  -- FK → identities.id (CASCADE DELETE)
+    identity_id INTEGER NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
     face_data   BLOB NOT NULL
 )
 
--- Historial de accesos detectados
+-- Historial de detecciones
 access_log (
     id              INTEGER PRIMARY KEY,
     identity_id     INTEGER,
     identity_name   TEXT NOT NULL,
-    confidence      REAL,
-    status          TEXT NOT NULL,  -- 'known' | 'unknown'
+    confidence      REAL,               -- porcentaje 0-100 (NO multiplicar × 100 en templates)
+    status          TEXT NOT NULL,      -- 'known' | 'unknown'
     screenshot_path TEXT,
+    camera_name     TEXT DEFAULT '',
     timestamp       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+
+-- Cámaras configuradas en la app de escritorio
+cameras (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    active     INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 ```
 
@@ -182,14 +240,46 @@ _known[identity_id] = {'name': ..., 'embedding': mean_emb}
 
 ---
 
-## GUI — Vistas implementadas
+## GUI escritorio — Vistas implementadas
 
 | Vista | Estado | Descripción |
 |-------|--------|-------------|
 | `monitoring` | ✅ | Video en vivo con bounding boxes y nombre/confianza. Inferencia en hilo de fondo |
 | `registration` | ✅ | Registro multi-ángulo automático (6 pasos × 10 muestras = 60 crops 224×224) |
 | `database` | ✅ | Lista de identidades con opción de eliminar |
-| `logs` / Historial | ❌ | Botón en sidebar existe — vista NO implementada |
+| Historial | ✅ | Tabla de logs con confianza, cámara y estado |
+
+---
+
+## Portal web — Rutas implementadas
+
+| Ruta | Método | Descripción |
+|------|--------|-------------|
+| `/` | GET | Redirect → dashboard si autenticado, login si no |
+| `/login` | GET/POST | Autenticación con correo + contraseña |
+| `/register` | GET/POST | Crear cuenta (CURP, datos personales) |
+| `/forgot-password` | GET/POST | Solicitud de reset de contraseña |
+| `/logout` | GET | Cerrar sesión |
+| `/dashboard` | GET | Stats personales + últimas detecciones deduplicadas |
+| `/profile` | GET | Perfil completo + estado del registro facial |
+| `/my-history` | GET | Historial completo de detecciones |
+| `/register_face` | GET | Página de captura facial (60 frames webcam) |
+| `/api/register_face` | POST | Recibe frames base64 → guarda identidad → push Git |
+
+---
+
+## Sincronización Git
+
+| Evento | Función | Detalle |
+|--------|---------|---------|
+| Registro facial (web) | `push_db()` | Inmediato, hilo de fondo |
+| Detecciones (desktop) | `start_detection_pusher()` | Batch cada 10 s — `mark_detection_pending()` en `log_access()` |
+| Eliminar identidad (desktop) | `push_db()` | Inmediato |
+| Botón Sincronizar Nube | `pull_db_identities()` | Solo importa identidades nuevas — NO reemplaza DB completo |
+
+> **Conflictos de binary merge:** Desktop nunca hace `git pull` del DB completo.
+> Lee el remoto con `git show origin/main:data/omniface.db` en archivo temporal
+> y hace `INSERT OR IGNORE` a nivel de filas SQLite.
 
 ---
 
@@ -226,9 +316,10 @@ _known[identity_id] = {'name': ..., 'embedding': mean_emb}
 
 | Herramienta | Uso |
 |-------------|-----|
-| **Git** | Control de versiones |
+| **Git** | Control de versiones + transporte de DB entre dispositivos |
 | **GitHub** — `AngelMtz6/OmniFace` | Repositorio remoto, rama `main` |
 | **VS Code** | Editor — `.vscode/launch.json` configurado para venv |
-| **Claude** | Asistente de desarrollo |
+| **Claude** | Asistente de desarrollo (Vibe Coding) |
 | **nvidia-smi** | Verificar GPU disponible |
 | **CUDA Toolkit 12.x** | Requerido para activar GPU (proporciona `cublasLt64_12.dll`) |
+| **ngrok** | Túnel HTTPS para probar cámara web fuera de localhost |

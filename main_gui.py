@@ -47,6 +47,10 @@ class OmniFaceApp(ctk.CTk):
         
         # Asegurar que la DB esté lista
         init_db()
+
+        # Iniciar push periódico de detecciones cada 10 s
+        from app.sync import start_detection_pusher
+        start_detection_pusher()
         
         # Inicializar componentes
         self.camera_index = 0

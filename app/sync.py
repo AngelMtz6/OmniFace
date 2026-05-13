@@ -12,12 +12,46 @@ import sqlite3
 import subprocess
 import tempfile
 import threading
+import time
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DB   = os.path.join(_ROOT, "data", "omniface.db")
 
 # Mutex: evita que dos operaciones git corran simultáneamente
 _GIT_LOCK = threading.Lock()
+
+# ── Push periódico de detecciones (cada 10 s) ─────────────────────────────────
+_PUSH_INTERVAL = 10          # segundos entre pushes automáticos
+_detection_pending = False   # True cuando hay nuevas detecciones sin pushear
+_pusher_started    = False   # Para no lanzar el hilo más de una vez
+
+
+def mark_detection_pending() -> None:
+    """Llamar cada vez que se guarda una detección en access_log."""
+    global _detection_pending
+    _detection_pending = True
+
+
+def start_detection_pusher() -> None:
+    """
+    Lanza (una sola vez) el hilo de fondo que pushea la DB cada 10 s
+    cuando hay detecciones nuevas. Llamar desde la app de escritorio al arrancar.
+    """
+    global _pusher_started
+    if _pusher_started:
+        return
+    _pusher_started = True
+
+    def _loop():
+        global _detection_pending
+        while True:
+            time.sleep(_PUSH_INTERVAL)
+            if _detection_pending:
+                _detection_pending = False
+                push_db("monitor")   # commit + push en fondo (no bloquea el loop)
+
+    threading.Thread(target=_loop, daemon=True, name="DetectionPusher").start()
+    print(f"[OmniFace Sync] Pusher de detecciones iniciado (cada {_PUSH_INTERVAL}s)")
 
 
 # ── PUSH (llamado desde el servidor web) ─────────────────────────────────────
